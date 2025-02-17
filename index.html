@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Chatt</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            font-family: 'Patrick Hand', cursive;
+            background-color: #D8C3A5; 
+            color: #5E4635; 
+            text-align: center; 
+            background-image: url('https://www.transparenttextures.com/patterns/beige-paper.png');
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .chat-container {
+            width: 90vw;
+            max-width: 1000px;
+            height: 70vh;
+            border: 3px solid #A67C52; 
+            padding: 15px; 
+            border-radius: 15px; 
+            background-color: #F4E1C6;
+            box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        .messages {
+            flex-grow: 1;
+            overflow-y: auto; 
+            text-align: left; 
+            padding: 10px; 
+            background-color: #EDE0D4;
+            border-radius: 10px;
+        }
+        .message {
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            margin-bottom: 8px; 
+            background-color: #E6CCB2; 
+            padding: 10px; 
+            border-radius: 10px;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.15);
+        }
+        .avatar {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            border: 2px solid #8D6E63;
+        }
+        .alias-container {
+            margin-bottom: 15px;
+        }
+        .alias-input {
+            background-color: #FAE1DD;
+            border: 2px solid #A67C52;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+        iframe {
+            width: 100%;
+            height: 40vh;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🎥 YouTube Chatt</h2>
+        <div class="alias-container" id="aliasContainer">
+            <input type="text" id="aliasInput" class="alias-input" placeholder="Välj ett alias...">
+            <button onclick="setAlias()">Ange</button>
+        </div>
+        <div>
+            <input type="text" id="youtubeUrl" placeholder="Klistra in en YouTube-länk">
+            <button onclick="loadVideo()">Ladda Video</button>
+        </div>
+        <div id="videoContainer"></div>
+        
+        <div class="chat-container">
+            <div class="messages" id="chatMessages"></div>
+            <input type="text" id="chatInput" placeholder="Skriv ett meddelande...">
+            <button onclick="sendMessage()">Skicka</button>
+        </div>
+    </div>
+    
+    <script>
+        let userAlias = "Anonym";
+        function setAlias() {
+            const aliasInput = document.getElementById('aliasInput').value.trim();
+            if (aliasInput) {
+                userAlias = aliasInput;
+                document.getElementById('aliasContainer').classList.add('hidden');
+            }
+        }
+        
+        function extractYouTubeID(url) {
+            const regExp = /^.*(youtu.be\/|v\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+            const match = url.match(regExp);
+            return match && match[2].length === 11 ? match[2] : null;
+        }
+
+        function loadVideo() {
+            const url = document.getElementById('youtubeUrl').value;
+            const videoId = extractYouTubeID(url);
+            if (videoId) {
+                document.getElementById('videoContainer').innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}" allowfullscreen></iframe>`;
+            } else {
+                alert("Ogiltig YouTube-länk. Försök igen!");
+            }
+        }
+    </script>
+</body>
+</html>
