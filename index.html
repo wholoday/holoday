@@ -2,17 +2,17 @@
 <html lang="sv">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>YouTube Chatt</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     
     * {
-      margin: 0;
-      padding: 0;
+      margin: 0; 
+      padding: 0; 
       box-sizing: border-box;
     }
-    
+
     body {
       font-family: 'Patrick Hand', cursive;
       background-color: #D8C3A5;
@@ -20,15 +20,15 @@
       background-image: url('https://www.transparenttextures.com/patterns/beige-paper.png');
       overflow: hidden; /* Ingen scroll */
     }
-    
-    /* Huvudbehållaren: 63vw bred, 100vh hög */
+
+    /* Huvudbehållare */
     .main-container {
       width: 63vw;
       height: 100vh;
       margin: 0 auto;
     }
-    
-    /* Övre delen: videodelen, 65vh med 13px luft ovanför och under */
+
+    /* Videodel: 65vh + 13px luft uppe och nere */
     .video-wrapper {
       height: 65vh;
       padding: 13px 0;
@@ -45,15 +45,15 @@
       height: 100%;
       border-radius: 10px;
     }
-    
-    /* Nedre delen: chatt + spellista, 35vh hög */
+
+    /* Nedre del: 35vh med chatt + spellista */
     .bottom-container {
       height: 35vh;
       padding: 13px 0;
       display: flex;
       gap: 2vw;
     }
-    
+
     /* Chatt-delen */
     .chat-container {
       flex: 1;
@@ -91,7 +91,7 @@
       white-space: pre-wrap;
       word-wrap: break-word;
     }
-    
+
     /* Spellista-delen */
     .playlist-container {
       width: 20vw;
@@ -119,6 +119,29 @@
       margin-bottom: 5px;
       border-radius: 5px;
     }
+
+    input {
+      font-size: 16px;
+      padding: 5px;
+      border: 2px solid #A67C52;
+      border-radius: 5px;
+      background-color: #FAE1DD;
+      margin-right: 5px;
+    }
+
+    button {
+      background-color: #A67C52;
+      color: #FAE1DD;
+      border: none;
+      border-radius: 5px;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+    button:hover {
+      opacity: 0.8;
+    }
   </style>
 </head>
 <body>
@@ -127,7 +150,7 @@
     <div class="video-wrapper">
       <div class="video-container" id="videoContainer"></div>
     </div>
-    
+
     <!-- Nedre delen: chatt + spellista -->
     <div class="bottom-container">
       <!-- Chatt-delen -->
@@ -142,7 +165,7 @@
         <button id="chatBtn">Skicka</button>
       </div>
       
-      <!-- Spellista-delen -->
+      <!-- Spellistan -->
       <div class="playlist-container">
         <h3>Spellista</h3>
         <div class="playlist-content" id="playlist"></div>
@@ -153,15 +176,14 @@
       </div>
     </div>
   </div>
-  
-  <!-- YouTube IFrame API (för att spela upp videos) -->
+
+  <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
-  
-  <!-- Firebase (din projektkonfiguration) -->
+
+  <!-- Firebase: Byt till dina värden om du har ett annat projekt -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
   <script>
-    // Ersätt nedanstående firebaseConfig med dina egna värden från Firebase Console om de skiljer sig
     const firebaseConfig = {
       apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
       authDomain: "video-chatt-15cd1.firebaseapp.com",
@@ -172,24 +194,23 @@
     };
     firebase.initializeApp(firebaseConfig);
 
-    // Koppla Firestore
+    // Koppling till Firestore
     const db = firebase.firestore();
   </script>
 
-  <!-- Nu kommer all logik för chat + spellista + spelare i en enda script-tag -->
+  <!-- Hela logiken i ett script -->
   <script>
     // Globala variabler
     let userAlias = 'Anonym';
     let player = null;
-    let currentVideoId = null; // Vilken video som spelas just nu
-    
-    // Samlingar i Firestore
+
+    // Firestore-samlingar
     const chatRef = db.collection('chat');
     const playlistRef = db.collection('playlist');
 
-    //--------------------------------------------------
+    //---------------------------------------
     // ALIAS
-    //--------------------------------------------------
+    //---------------------------------------
     function setAlias() {
       const aliasInput = document.getElementById('aliasInput');
       const aliasValue = aliasInput.value.trim();
@@ -199,16 +220,15 @@
       }
     }
 
-    //--------------------------------------------------
+    //---------------------------------------
     // CHATT
-    //--------------------------------------------------
-    // Skicka meddelande (sparas i Firestore)
+    //---------------------------------------
+    // Skicka meddelande -> spara i Firestore
     function sendMessage() {
       const input = document.getElementById('chatInput');
       const messageText = input.value.trim();
       if (!messageText) return;
 
-      // Skicka till Firestore
       chatRef.add({
         alias: userAlias,
         message: messageText,
@@ -217,29 +237,36 @@
       input.value = '';
     }
 
-    // Lyssna på nya meddelanden i Firestore och uppdatera DOM
-    chatRef.orderBy('timestamp').onSnapshot(snapshot => {
+    // Lyssna på chatt-samlingen och uppdatera DOM
+    chatRef.orderBy('timestamp').onSnapshot((snapshot) => {
       const chatMessages = document.getElementById('chatMessages');
       chatMessages.innerHTML = '';
       snapshot.forEach(doc => {
         const data = doc.data();
-        const messageDiv = document.createElement('div');
-        messageDiv.classList.add('message');
-        messageDiv.textContent = `${data.alias}: ${data.message}`;
-        chatMessages.appendChild(messageDiv);
+        const msgDiv = document.createElement('div');
+        msgDiv.classList.add('message');
+        msgDiv.textContent = `${data.alias}: ${data.message}`;
+        chatMessages.appendChild(msgDiv);
       });
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    //--------------------------------------------------
+    //---------------------------------------
     // SPELLISTA
-    //--------------------------------------------------
-    // Lägger till en video i Firestore
+    //---------------------------------------
+    // Hämta ut videoId ur en YouTube-länk
+    function extractYouTubeID(url) {
+      const regExp = /^.*(youtu\\.be\\/|v\\/|embed\\/|watch\\?v=|&v=)([^#&?]*).*/;
+      const match = url.match(regExp);
+      return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    // Lägg till video i Firestore
     function addToPlaylist() {
       const urlInput = document.getElementById('youtubeUrl');
       const url = urlInput.value;
       const videoId = extractYouTubeID(url);
-      
+
       if (videoId) {
         playlistRef.add({
           videoId: videoId,
@@ -252,69 +279,59 @@
       }
     }
 
-    // Hjälpfunktion för att plocka ut YT-videoID ur en URL
-    function extractYouTubeID(url) {
-      const regExp = /^.*(youtu\\.be\\/|v\\/|embed\\/|watch\\?v=|&v=)([^#&?]*).*/;
-      const match = url.match(regExp);
-      return match && match[2].length === 11 ? match[2] : null;
-    }
-
-    // Lyssna på förändringar i spellistan, uppdatera DOM och hantera uppspelning
-    playlistRef.orderBy('timestamp').onSnapshot(snapshot => {
+    // Lyssna på spellistan -> uppdatera DOM och starta video
+    playlistRef.orderBy('timestamp').onSnapshot((snapshot) => {
       const playlistDiv = document.getElementById('playlist');
       playlistDiv.innerHTML = '';
 
-      // Samla alla videos i en array för enkel åtkomst
       const videos = [];
       snapshot.forEach(doc => {
         const data = doc.data();
         videos.push({ id: doc.id, ...data });
       });
 
-      // Visa alla videos i DOM
-      videos.forEach((videoData, index) => {
+      // Visa alla videor i DOM
+      videos.forEach((v, i) => {
         const div = document.createElement('div');
         div.classList.add('playlist-item');
-        div.textContent = `${index + 1}. Lagd av: ${videoData.addedBy}`;
+        div.textContent = `${i + 1}. Lagd av: ${v.addedBy}`;
         playlistDiv.appendChild(div);
       });
 
-      // Om ingen spelare finns och det finns minst en video, starta den första
+      // Om ingen spelare finns och vi har minst en video -> starta första
       if (!player && videos.length > 0) {
         startVideo(videos[0]);
       }
     });
 
-    // Starta uppspelning av en viss video (första i kön)
-    function startVideo(videoData) {
-      currentVideoId = videoData.id; // Spara vilken doc som spelas
+    // Spela en video
+    function startVideo(videoObj) {
       player = new YT.Player('videoContainer', {
         width: '100%',
         height: '100%',
-        videoId: videoData.videoId,
+        videoId: videoObj.videoId,
         playerVars: { autoplay: 1 },
         events: {
           'onStateChange': (event) => {
             if (event.data === YT.PlayerState.ENDED) {
-              // Ta bort videon från Firestore, då den spelats klart
-              playlistRef.doc(videoData.id).delete();
-              // Rensa spelare
+              // Radera videon som just spelats
+              playlistRef.doc(videoObj.id).delete();
+              // Nollställ spelaren
               player = null;
-              currentVideoId = null;
             }
           }
         }
       });
     }
 
-    //--------------------------------------------------
+    //---------------------------------------
     // EVENT-LYSSNARE
-    //--------------------------------------------------
+    //---------------------------------------
     document.getElementById('aliasBtn').addEventListener('click', setAlias);
     document.getElementById('aliasInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') setAlias();
     });
-    
+
     document.getElementById('chatBtn').addEventListener('click', sendMessage);
     document.getElementById('chatInput').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') sendMessage();
