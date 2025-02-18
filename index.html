@@ -157,12 +157,22 @@
       <div class="chat-container">
         <h2>🎥 YouTube Chatt</h2>
         <div class="alias-container" id="aliasContainer">
-          <input type="text" id="aliasInput" placeholder="Välj ett alias..." />
-          <button id="aliasBtn">Ange</button>
+          <input
+            type="text"
+            id="aliasInput"
+            placeholder="Välj ett alias..."
+            onkeydown="if(event.key==='Enter'){ setAlias(); }"
+          />
+          <button onclick="setAlias()">Ange</button>
         </div>
         <div class="messages" id="chatMessages"></div>
-        <input type="text" id="chatInput" placeholder="Skriv ett meddelande..." />
-        <button id="chatBtn">Skicka</button>
+        <input
+          type="text"
+          id="chatInput"
+          placeholder="Skriv ett meddelande..."
+          onkeydown="if(event.key==='Enter'){ sendMessage(); }"
+        />
+        <button onclick="sendMessage()">Skicka</button>
       </div>
       
       <!-- Spellistan -->
@@ -170,8 +180,13 @@
         <h3>Spellista</h3>
         <div class="playlist-content" id="playlist"></div>
         <div class="video-add-container">
-          <input type="text" id="youtubeUrl" placeholder="Klistra in en YouTube-länk" />
-          <button id="playlistBtn">Lägg till i spellista</button>
+          <input
+            type="text"
+            id="youtubeUrl"
+            placeholder="Klistra in en YouTube-länk"
+            onkeydown="if(event.key==='Enter'){ addToPlaylist(); }"
+          />
+          <button onclick="addToPlaylist()">Lägg till i spellista</button>
         </div>
       </div>
     </div>
@@ -180,10 +195,12 @@
   <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
 
-  <!-- Firebase: Byt till dina värden om du har ett annat projekt -->
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
+  <!-- Firebase: Byt ut dina värden om du har ett annat projekt -->
+  <!-- Använder "compat"-versionerna för att den gamla syntaxen ska fungera -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
   <script>
+    // Byt ut firebaseConfig om du har andra värden
     const firebaseConfig = {
       apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
       authDomain: "video-chatt-15cd1.firebaseapp.com",
@@ -192,25 +209,24 @@
       messagingSenderId: "1071939099962",
       appId: "1:1071939099962:web:70a186c0bb1abc1760c403"
     };
+    // Initiera Firebase
     firebase.initializeApp(firebaseConfig);
-
-    // Koppling till Firestore
+    // Koppla Firestore
     const db = firebase.firestore();
   </script>
 
-  <!-- Hela logiken i ett script -->
+  <!-- All logik inline-event: Klick/onkeydown anropar dessa funktioner -->
   <script>
-    // Globala variabler
     let userAlias = 'Anonym';
     let player = null;
 
-    // Firestore-samlingar
+    // Samlingar i Firestore
     const chatRef = db.collection('chat');
     const playlistRef = db.collection('playlist');
 
-    //---------------------------------------
+    //--------------------------------------
     // ALIAS
-    //---------------------------------------
+    //--------------------------------------
     function setAlias() {
       const aliasInput = document.getElementById('aliasInput');
       const aliasValue = aliasInput.value.trim();
@@ -220,15 +236,15 @@
       }
     }
 
-    //---------------------------------------
+    //--------------------------------------
     // CHATT
-    //---------------------------------------
-    // Skicka meddelande -> spara i Firestore
+    //--------------------------------------
     function sendMessage() {
       const input = document.getElementById('chatInput');
       const messageText = input.value.trim();
       if (!messageText) return;
 
+      // Spara i Firestore
       chatRef.add({
         alias: userAlias,
         message: messageText,
@@ -237,31 +253,25 @@
       input.value = '';
     }
 
-    // Lyssna på chatt-samlingen och uppdatera DOM
+    // Uppdatera chatten i realtid
     chatRef.orderBy('timestamp').onSnapshot((snapshot) => {
       const chatMessages = document.getElementById('chatMessages');
       chatMessages.innerHTML = '';
       snapshot.forEach(doc => {
         const data = doc.data();
+        // Skapa en chattbubbla
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('message');
         msgDiv.textContent = `${data.alias}: ${data.message}`;
         chatMessages.appendChild(msgDiv);
       });
+      // Scrolla ner
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    //---------------------------------------
+    //--------------------------------------
     // SPELLISTA
-    //---------------------------------------
-    // Hämta ut videoId ur en YouTube-länk
-    function extractYouTubeID(url) {
-      const regExp = /^.*(youtu\\.be\\/|v\\/|embed\\/|watch\\?v=|&v=)([^#&?]*).*/;
-      const match = url.match(regExp);
-      return (match && match[2].length === 11) ? match[2] : null;
-    }
-
-    // Lägg till video i Firestore
+    //--------------------------------------
     function addToPlaylist() {
       const urlInput = document.getElementById('youtubeUrl');
       const url = urlInput.value;
@@ -279,32 +289,35 @@
       }
     }
 
-    // Lyssna på spellistan -> uppdatera DOM och starta video
+    function extractYouTubeID(url) {
+      const regExp = /^.*(youtu\\.be\\/|v\\/|embed\\/|watch\\?v=|&v=)([^#&?]*).*/;
+      const match = url.match(regExp);
+      return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    // Kolla spellistan i realtid
     playlistRef.orderBy('timestamp').onSnapshot((snapshot) => {
       const playlistDiv = document.getElementById('playlist');
       playlistDiv.innerHTML = '';
-
       const videos = [];
       snapshot.forEach(doc => {
         const data = doc.data();
         videos.push({ id: doc.id, ...data });
       });
-
-      // Visa alla videor i DOM
-      videos.forEach((v, i) => {
-        const div = document.createElement('div');
-        div.classList.add('playlist-item');
-        div.textContent = `${i + 1}. Lagd av: ${v.addedBy}`;
-        playlistDiv.appendChild(div);
+      // Visa i DOM
+      videos.forEach((vid, idx) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.classList.add('playlist-item');
+        itemDiv.textContent = `${idx + 1}. Lagd av: ${vid.addedBy}`;
+        playlistDiv.appendChild(itemDiv);
       });
-
-      // Om ingen spelare finns och vi har minst en video -> starta första
+      // Om ingen video spelas och det finns minst en -> starta första
       if (!player && videos.length > 0) {
         startVideo(videos[0]);
       }
     });
 
-    // Spela en video
+    // Starta en video
     function startVideo(videoObj) {
       player = new YT.Player('videoContainer', {
         width: '100%',
@@ -314,33 +327,14 @@
         events: {
           'onStateChange': (event) => {
             if (event.data === YT.PlayerState.ENDED) {
-              // Radera videon som just spelats
+              // Ta bort videon från Firestore
               playlistRef.doc(videoObj.id).delete();
-              // Nollställ spelaren
               player = null;
             }
           }
         }
       });
     }
-
-    //---------------------------------------
-    // EVENT-LYSSNARE
-    //---------------------------------------
-    document.getElementById('aliasBtn').addEventListener('click', setAlias);
-    document.getElementById('aliasInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') setAlias();
-    });
-
-    document.getElementById('chatBtn').addEventListener('click', sendMessage);
-    document.getElementById('chatInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') sendMessage();
-    });
-
-    document.getElementById('playlistBtn').addEventListener('click', addToPlaylist);
-    document.getElementById('youtubeUrl').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addToPlaylist();
-    });
   </script>
 </body>
 </html>
