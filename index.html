@@ -104,12 +104,10 @@
       display: flex;
       flex-direction: column;
     }
-    /* Område för spellistans innehåll (scrollbart) */
     .playlist-content {
       flex: 1;
       overflow-y: auto;
     }
-    /* Inmatningsfältet för YouTube-länkar placeras här, längst ner i spellistan */
     .video-add-container {
       text-align: center;
       margin-top: 13px;
@@ -121,43 +119,15 @@
       margin-bottom: 5px;
       border-radius: 5px;
     }
-    
-    input {
-      font-size: 16px;
-      padding: 5px;
-      border: 2px solid #A67C52;
-      border-radius: 5px;
-      background-color: #FAE1DD;
-      margin-right: 5px;
-    }
-    
-    button {
-      background-color: #A67C52;
-      color: #FAE1DD;
-      border: none;
-      border-radius: 5px;
-      padding: 7px 12px;
-      cursor: pointer;
-      font-size: 16px;
-      margin-bottom: 5px;
-    }
-    button:hover {
-      opacity: 0.8;
-    }
   </style>
 </head>
 <body>
   <div class="main-container">
-    <!-- Övre delen: videofönstret -->
     <div class="video-wrapper">
-      <div class="video-container" id="videoContainer">
-        <!-- YouTube-spelaren skapas här -->
-      </div>
+      <div class="video-container" id="videoContainer"></div>
     </div>
     
-    <!-- Nedre delen: chatt + spellista -->
     <div class="bottom-container">
-      <!-- Chatt-delen -->
       <div class="chat-container">
         <h2>🎥 YouTube Chatt</h2>
         <div class="alias-container" id="aliasContainer">
@@ -169,13 +139,9 @@
         <button id="chatBtn">Skicka</button>
       </div>
       
-      <!-- Spellista-delen -->
       <div class="playlist-container">
         <h3>Spellista</h3>
-        <div class="playlist-content" id="playlist">
-          <!-- Spellisteposter läggs här -->
-        </div>
-        <!-- YouTube-länk inmatning flyttas hit -->
+        <div class="playlist-content" id="playlist"></div>
         <div class="video-add-container">
           <input type="text" id="youtubeUrl" placeholder="Klistra in en YouTube-länk" />
           <button id="playlistBtn">Lägg till i spellista</button>
@@ -184,118 +150,21 @@
     </div>
   </div>
   
-  <!-- Ladda YouTube IFrame API -->
-  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
   <script>
-    let userAlias = 'Anonym';
-    let playlist = [];
-    let player = null;
+    const firebaseConfig = {
+      apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
+      authDomain: "video-chatt-15cd1.firebaseapp.com",
+      projectId: "video-chatt-15cd1",
+      storageBucket: "video-chatt-15cd1.firebasestorage.app",
+      messagingSenderId: "1071939099962",
+      appId: "1:1071939099962:web:70a186c0bb1abc1760c403"
+    };
     
-    //---------------- ALIAS ----------------//
-    function setAlias() {
-      const aliasInput = document.getElementById('aliasInput');
-      const aliasValue = aliasInput.value.trim();
-      if (aliasValue) {
-        userAlias = aliasValue;
-        document.getElementById('aliasContainer').style.display = 'none';
-      }
-    }
-    
-    //-------------- YOUTUBE ---------------//
-    function extractYouTubeID(url) {
-      const regExp = /^.*(youtu\.be\/|v\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-      const match = url.match(regExp);
-      return match && match[2].length === 11 ? match[2] : null;
-    }
-    
-    // Lägger till en video – spelas direkt om ingen video är aktiv, annars läggs den i kön
-    function addToPlaylist() {
-      const urlInput = document.getElementById('youtubeUrl');
-      const url = urlInput.value;
-      const videoId = extractYouTubeID(url);
-    
-      if (videoId) {
-        if (player === null) {
-          player = new YT.Player('videoContainer', {
-            width: '100%',
-            height: '100%',
-            videoId: videoId,
-            playerVars: { autoplay: 1 },
-            events: { 'onStateChange': onPlayerStateChange }
-          });
-        } else {
-          const state = player.getPlayerState();
-          if ((state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) && playlist.length === 0) {
-            player.loadVideoById(videoId);
-          } else {
-            playlist.push({ videoId: videoId, addedBy: userAlias });
-            updatePlaylist();
-          }
-        }
-      } else {
-        alert('Ogiltig YouTube-länk. Försök igen!');
-      }
-      urlInput.value = '';
-    }
-    
-    function updatePlaylist() {
-      const playlistDiv = document.getElementById('playlist');
-      playlistDiv.innerHTML = '';
-      playlist.forEach((item, index) => {
-        const div = document.createElement('div');
-        div.classList.add('playlist-item');
-        div.textContent = `${index + 1}. Lagd av: ${item.addedBy}`;
-        playlistDiv.appendChild(div);
-      });
-    }
-    
-    // När en video tar slut, laddas nästa från kön
-    function loadNextVideo() {
-      if (playlist.length > 0) {
-        const nextVideo = playlist.shift();
-        player.loadVideoById(nextVideo.videoId);
-        updatePlaylist();
-      }
-    }
-    
-    // YouTube-spelarens statusändring
-    function onPlayerStateChange(event) {
-      if (event.data === YT.PlayerState.ENDED) {
-        loadNextVideo();
-      }
-    }
-    
-    //---------------- CHATTEN --------------//
-    function sendMessage() {
-      const input = document.getElementById('chatInput');
-      const messageText = input.value.trim();
-      if (!messageText) return;
-    
-      const chatMessages = document.getElementById('chatMessages');
-      const messageDiv = document.createElement('div');
-      messageDiv.classList.add('message');
-      const textSpan = document.createElement('span');
-      textSpan.textContent = `${userAlias}: ${messageText}`;
-      messageDiv.appendChild(textSpan);
-      chatMessages.appendChild(messageDiv);
-    
-      input.value = '';
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-    
-    // Koppla eventlyssnare
-    document.getElementById('aliasBtn').addEventListener('click', setAlias);
-    document.getElementById('aliasInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') setAlias();
-    });
-    document.getElementById('playlistBtn').addEventListener('click', addToPlaylist);
-    document.getElementById('youtubeUrl').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') addToPlaylist();
-    });
-    document.getElementById('chatBtn').addEventListener('click', sendMessage);
-    document.getElementById('chatInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') sendMessage();
-    });
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
   </script>
+  <script src="firebase_logic.js"></script>
 </body>
 </html>
