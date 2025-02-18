@@ -123,11 +123,14 @@
 </head>
 <body>
   <div class="main-container">
+    <!-- Övre delen: videofönstret -->
     <div class="video-wrapper">
       <div class="video-container" id="videoContainer"></div>
     </div>
     
+    <!-- Nedre delen: chatt + spellista -->
     <div class="bottom-container">
+      <!-- Chatt-delen -->
       <div class="chat-container">
         <h2>🎥 YouTube Chatt</h2>
         <div class="alias-container" id="aliasContainer">
@@ -139,6 +142,7 @@
         <button id="chatBtn">Skicka</button>
       </div>
       
+      <!-- Spellista-delen -->
       <div class="playlist-container">
         <h3>Spellista</h3>
         <div class="playlist-content" id="playlist"></div>
@@ -150,9 +154,14 @@
     </div>
   </div>
   
+  <!-- YouTube IFrame API (för att spela upp videos) -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  
+  <!-- Firebase (din projektkonfiguration) -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
   <script>
+    // Ersätt nedanstående firebaseConfig med dina egna värden från Firebase Console om de skiljer sig
     const firebaseConfig = {
       apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
       authDomain: "video-chatt-15cd1.firebaseapp.com",
@@ -161,10 +170,160 @@
       messagingSenderId: "1071939099962",
       appId: "1:1071939099962:web:70a186c0bb1abc1760c403"
     };
-    
     firebase.initializeApp(firebaseConfig);
+
+    // Koppla Firestore
     const db = firebase.firestore();
   </script>
-  <script src="firebase_logic.js"></script>
+
+  <!-- Nu kommer all logik för chat + spellista + spelare i en enda script-tag -->
+  <script>
+    // Globala variabler
+    let userAlias = 'Anonym';
+    let player = null;
+    let currentVideoId = null; // Vilken video som spelas just nu
+    
+    // Samlingar i Firestore
+    const chatRef = db.collection('chat');
+    const playlistRef = db.collection('playlist');
+
+    //--------------------------------------------------
+    // ALIAS
+    //--------------------------------------------------
+    function setAlias() {
+      const aliasInput = document.getElementById('aliasInput');
+      const aliasValue = aliasInput.value.trim();
+      if (aliasValue) {
+        userAlias = aliasValue;
+        document.getElementById('aliasContainer').style.display = 'none';
+      }
+    }
+
+    //--------------------------------------------------
+    // CHATT
+    //--------------------------------------------------
+    // Skicka meddelande (sparas i Firestore)
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const messageText = input.value.trim();
+      if (!messageText) return;
+
+      // Skicka till Firestore
+      chatRef.add({
+        alias: userAlias,
+        message: messageText,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      input.value = '';
+    }
+
+    // Lyssna på nya meddelanden i Firestore och uppdatera DOM
+    chatRef.orderBy('timestamp').onSnapshot(snapshot => {
+      const chatMessages = document.getElementById('chatMessages');
+      chatMessages.innerHTML = '';
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message');
+        messageDiv.textContent = `${data.alias}: ${data.message}`;
+        chatMessages.appendChild(messageDiv);
+      });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+
+    //--------------------------------------------------
+    // SPELLISTA
+    //--------------------------------------------------
+    // Lägger till en video i Firestore
+    function addToPlaylist() {
+      const urlInput = document.getElementById('youtubeUrl');
+      const url = urlInput.value;
+      const videoId = extractYouTubeID(url);
+      
+      if (videoId) {
+        playlistRef.add({
+          videoId: videoId,
+          addedBy: userAlias,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        urlInput.value = '';
+      } else {
+        alert('Ogiltig YouTube-länk. Försök igen!');
+      }
+    }
+
+    // Hjälpfunktion för att plocka ut YT-videoID ur en URL
+    function extractYouTubeID(url) {
+      const regExp = /^.*(youtu\\.be\\/|v\\/|embed\\/|watch\\?v=|&v=)([^#&?]*).*/;
+      const match = url.match(regExp);
+      return match && match[2].length === 11 ? match[2] : null;
+    }
+
+    // Lyssna på förändringar i spellistan, uppdatera DOM och hantera uppspelning
+    playlistRef.orderBy('timestamp').onSnapshot(snapshot => {
+      const playlistDiv = document.getElementById('playlist');
+      playlistDiv.innerHTML = '';
+
+      // Samla alla videos i en array för enkel åtkomst
+      const videos = [];
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        videos.push({ id: doc.id, ...data });
+      });
+
+      // Visa alla videos i DOM
+      videos.forEach((videoData, index) => {
+        const div = document.createElement('div');
+        div.classList.add('playlist-item');
+        div.textContent = `${index + 1}. Lagd av: ${videoData.addedBy}`;
+        playlistDiv.appendChild(div);
+      });
+
+      // Om ingen spelare finns och det finns minst en video, starta den första
+      if (!player && videos.length > 0) {
+        startVideo(videos[0]);
+      }
+    });
+
+    // Starta uppspelning av en viss video (första i kön)
+    function startVideo(videoData) {
+      currentVideoId = videoData.id; // Spara vilken doc som spelas
+      player = new YT.Player('videoContainer', {
+        width: '100%',
+        height: '100%',
+        videoId: videoData.videoId,
+        playerVars: { autoplay: 1 },
+        events: {
+          'onStateChange': (event) => {
+            if (event.data === YT.PlayerState.ENDED) {
+              // Ta bort videon från Firestore, då den spelats klart
+              playlistRef.doc(videoData.id).delete();
+              // Rensa spelare
+              player = null;
+              currentVideoId = null;
+            }
+          }
+        }
+      });
+    }
+
+    //--------------------------------------------------
+    // EVENT-LYSSNARE
+    //--------------------------------------------------
+    document.getElementById('aliasBtn').addEventListener('click', setAlias);
+    document.getElementById('aliasInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') setAlias();
+    });
+    
+    document.getElementById('chatBtn').addEventListener('click', sendMessage);
+    document.getElementById('chatInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    document.getElementById('playlistBtn').addEventListener('click', addToPlaylist);
+    document.getElementById('youtubeUrl').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') addToPlaylist();
+    });
+  </script>
 </body>
 </html>
