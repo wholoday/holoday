@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt</title>
+  <title>YouTube Chatt 2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -12,7 +12,7 @@
       background-color: #D8C3A5;
       color: #5E4635;
       background-image: url('https://www.transparenttextures.com/patterns/beige-paper.png');
-      overflow: hidden; /* Ingen scroll */
+      overflow: hidden;
     }
     .main-container {
       width: 63vw;
@@ -270,20 +270,21 @@
         return;
       }
 
-      // Stäng ev. gammalt interval
+      // Stäng eventuellt tidigare interval
       if (syncInterval) {
         clearInterval(syncInterval);
         syncInterval = null;
       }
 
-      // Sätt docRef till just denna video
+      // Sätt docRef till denna video
       currentVideoDocRef = playlistRef.doc(videoObj.id);
 
       // Kolla om nuvarande användare är ägaren
       const isOwner = (videoObj.addedBy === userAlias);
 
-      // Skapa YT-player
       console.log("Skapar spelare för video:", videoObj.videoId, "Ägare?", isOwner);
+
+      // Skapa YouTube-spelaren
       player = new YT.Player('videoContainer', {
         width: '100%',
         height: '100%',
@@ -292,28 +293,25 @@
           autoplay: 1,
           modestbranding: 1,
           rel: 0,
-          // Endast ägaren kan styra fritt
           disablekb: isOwner ? 0 : 1
         },
         events: {
           'onReady': () => {
             console.log("Video laddad, lyssnar på Firestore för synk...");
 
-            // Lyssna i realtid på docet
+            // Lyssna i realtid på detta videos dokument
             currentVideoDocRef.onSnapshot((doc) => {
               if (!doc.exists) {
-                console.log("Dokumentet togs bort ur Firestore, ingen video längre.");
+                console.log("Dokumentet togs bort, ingen video längre.");
                 return;
               }
               const data = doc.data();
-
-              // Icke-ägare följer Firestore
               if (!isOwner) {
                 syncPlayerToFirestore(data);
               }
             });
 
-            // Om vi är ägaren, uppdatera currentTime var ~1s
+            // Om ägaren, uppdatera currentTime var 1 sekund
             if (isOwner) {
               syncInterval = setInterval(() => {
                 if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
@@ -325,16 +323,15 @@
             }
           },
           'onStateChange': (event) => {
-            // 1. Blockera ev. annons
+            // 1. Blockera eventuella annonser – hoppa fram 5 sekunder vid UNSTARTED
             if (event.data === YT.PlayerState.UNSTARTED) {
               console.log("UNSTARTED, hoppar 5s för ev. annons");
               player.mute();
               player.seekTo(5, true);
             }
 
-            // 2. Hantera paus/play
+            // 2. Hantera paus och spel
             if (isOwner) {
-              // Ägaren pausade
               if (event.data === YT.PlayerState.PAUSED) {
                 const nowTime = player.getCurrentTime();
                 console.log("Ägaren pausade vid tid:", nowTime);
@@ -343,35 +340,32 @@
                   currentTime: nowTime
                 }).catch(err => console.error("Fel vid uppdatering (paus):", err));
               }
-              // Ägaren spelar
               if (event.data === YT.PlayerState.PLAYING) {
                 const nowTime = player.getCurrentTime();
-                console.log("Ägaren spelar nu, tid:", nowTime);
+                console.log("Ägaren spelar, tid:", nowTime);
                 currentVideoDocRef.update({
                   paused: false,
                   currentTime: nowTime
                 }).catch(err => console.error("Fel vid uppdatering (play):", err));
               }
             } else {
-              // Icke-ägare får inte pausa -> startar videon igen
+              // Icke-ägare får inte pausa – tvinga igång videon
               if (event.data === YT.PlayerState.PAUSED) {
                 console.log("Icke-ägare försökte pausa – startar videon igen!");
                 player.playVideo();
               }
             }
 
-            // 3. När videon är slut -> endast ägaren tar bort dokumentet
-            if (event.data === YT.PlayerState.ENDED && isOwner) {
-              console.log("Videon är slut (ägare). Rensar interval och tar bort doc...");
-              // Rensa interval
+            // 3. När videon är slut – radera dokumentet (oavsett vem)
+            if (event.data === YT.PlayerState.ENDED) {
+              console.log("Videon är slut. Rensar interval och tar bort dokument...");
               if (syncInterval) {
                 clearInterval(syncInterval);
                 syncInterval = null;
               }
-              // Sätt player = null
+              // Sätt player = null direkt
               player = null;
-
-              // Vänta 200ms innan borttagning
+              // Vänta lite innan borttagning så att onSnapshot hinner uppdatera
               setTimeout(() => {
                 playlistRef.doc(videoObj.id)
                   .delete()
@@ -384,26 +378,23 @@
       });
     }
 
-    // -------------------- Synka icke-ägares spelare till Firestore-data --------------------
+    // -------------------- Synka icke-ägares spelare med Firestore-data --------------------
     function syncPlayerToFirestore(data) {
-      // Om paused = true -> pausa
       if (data.paused) {
         if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-          console.log("Synk: pausar lokalt. Tid i Firestore:", data.currentTime);
+          console.log("Synk: pausar lokalt. Tid från Firestore:", data.currentTime);
           player.pauseVideo();
           player.seekTo(data.currentTime, true);
         }
       } else {
-        // paused = false -> spela
         if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-          console.log("Synk: spelar lokalt. Tid i Firestore:", data.currentTime);
+          console.log("Synk: spelar lokalt. Tid från Firestore:", data.currentTime);
           player.playVideo();
           player.seekTo(data.currentTime, true);
         } else {
-          // Redan PLAYING -> kolla tid
           const diff = Math.abs(player.getCurrentTime() - data.currentTime);
           if (diff > 2) {
-            console.log("Synk: hoppar tid (spelar). Firestore tid:", data.currentTime, "diff:", diff);
+            console.log("Synk: justerar tid. Firestore tid:", data.currentTime, "diff:", diff);
             player.seekTo(data.currentTime, true);
           }
         }
@@ -424,7 +415,7 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    // -------------------- Realtidslyssnare för spellistan (sorterad) --------------------
+    // -------------------- Realtidslyssnare för spellistan (sorterad asc) --------------------
     playlistRef.orderBy('timestamp','asc').onSnapshot(snapshot => {
       const playlistDiv = document.getElementById('playlist');
       playlistDiv.innerHTML = '';
@@ -436,7 +427,7 @@
 
       console.log("Spellista uppdaterad, videos:", videos);
 
-      // Visa nya listan
+      // Visa videorna i listan
       videos.forEach((vid, idx) => {
         const itemDiv = document.createElement('div');
         itemDiv.classList.add('playlist-item');
@@ -444,14 +435,14 @@
         playlistDiv.appendChild(itemDiv);
       });
 
-      // Om ingen spelare finns och det finns videor -> starta första
+      // Om ingen spelare finns och det finns videor, starta nästa video
       if (!player && videos.length > 0) {
-        console.log("Ingen spelare, men videos finns. Startar:", videos[0]);
+        console.log("Ingen spelare, men videos finns. Startar nästa video:", videos[0]);
         startVideo(videos[0]);
       }
-      // Om listan är tom -> rensa fönstret
+      // Om listan är tom, rensa videofönstret
       else if (videos.length === 0) {
-        console.log("Spellistan är tom, nollställer spelare.");
+        console.log("Spellistan är tom, rensar videofönstret.");
         document.getElementById('videoContainer').innerHTML = '';
         player = null;
         currentVideoDocRef = null;
@@ -460,7 +451,7 @@
           syncInterval = null;
         }
       } else {
-        console.log("Antal videos i listan:", videos.length, "Player =", player);
+        console.log("Antal videor i listan:", videos.length, "Player =", player);
       }
     });
 
