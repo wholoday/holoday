@@ -3,33 +3,133 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt 1</title>
+  <title>YouTube Chatt 2</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box;
+    }
     body {
       font-family: 'Patrick Hand', cursive;
       background-color: #D8C3A5;
       color: #5E4635;
       background-image: url('https://www.transparenttextures.com/patterns/beige-paper.png');
-      overflow: hidden;
+      overflow: hidden; /* Ingen scroll */
     }
-    .main-container { width: 63vw; height: 100vh; margin: 0 auto; }
-    .video-wrapper { height: 65vh; padding: 13px 0; display: flex; justify-content: center; align-items: center; }
-    .video-container { width: 100%; height: calc(100% - 26px); }
-    .video-container iframe { width: 100%; height: 100%; border-radius: 10px; }
-    .bottom-container { height: 35vh; display: flex; gap: 2vw; }
-    .chat-container { flex: 1; border: 3px solid #A67C52; border-radius: 15px; background-color: #F4E1C6; box-shadow: 5px 5px 10px rgba(0,0,0,0.2); display: flex; flex-direction: column; padding: 15px; }
-    .alias-container { text-align: center; margin-bottom: 13px; }
-    .messages { flex-grow: 1; overflow-y: auto; text-align: left; padding: 10px; background-color: #F4E1C6; border-radius: 10px; margin-bottom: 10px; }
-    .message { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; background-color: #E6CCB2; padding: 10px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.15); font-size: 16px; white-space: pre-wrap; word-wrap: break-word; }
-    .playlist-container { width: 20vw; max-width: 300px; background-color: #E6CCB2; border: 3px solid #A67C52; border-radius: 10px; padding: 10px; box-shadow: 5px 5px 10px rgba(0,0,0,0.2); display: flex; flex-direction: column; }
-    .playlist-content { flex: 1; overflow-y: auto; }
-    .video-add-container { text-align: center; margin-top: 13px; }
-    .playlist-item { background-color: #FAE1DD; border: 2px solid #A67C52; padding: 10px; margin-bottom: 5px; border-radius: 5px; }
-    input { font-size: 16px; padding: 5px; border: 2px solid #A67C52; border-radius: 5px; background-color: #FAE1DD; margin-right: 5px; }
-    button { background-color: #A67C52; color: #FAE1DD; border: none; border-radius: 5px; padding: 7px 12px; cursor: pointer; font-size: 16px; margin-bottom: 5px; }
-    button:hover { opacity: 0.8; }
+    .main-container {
+      width: 63vw;
+      height: 100vh;
+      margin: 0 auto;
+    }
+    .video-wrapper {
+      height: 65vh;
+      padding: 13px 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .video-container {
+      width: 100%;
+      height: calc(100% - 26px);
+    }
+    .video-container iframe {
+      width: 100%;
+      height: 100%;
+      border-radius: 10px;
+    }
+    .bottom-container {
+      height: 35vh;
+      display: flex;
+      gap: 2vw;
+      padding: 0 0 13px 0; /* Lite luft under */
+    }
+    /* Chatt-delen */
+    .chat-container {
+      flex: 1;
+      border: 3px solid #A67C52;
+      border-radius: 15px;
+      background-color: #F4E1C6;
+      box-shadow: 5px 5px 10px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+    }
+    .alias-container {
+      text-align: center;
+      margin-bottom: 13px;
+    }
+    .messages {
+      flex-grow: 1;
+      overflow-y: auto;
+      text-align: left;
+      padding: 10px;
+      background-color: #F4E1C6;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+    .message {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      background-color: #E6CCB2;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.15);
+      font-size: 16px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    /* Spellista-delen */
+    .playlist-container {
+      width: 20vw;
+      max-width: 300px;
+      background-color: #E6CCB2;
+      border: 3px solid #A67C52;
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 5px 5px 10px rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+    }
+    .playlist-content {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .video-add-container {
+      text-align: center;
+      margin-top: 13px;
+    }
+    .playlist-item {
+      background-color: #FAE1DD;
+      border: 2px solid #A67C52;
+      padding: 10px;
+      margin-bottom: 5px;
+      border-radius: 5px;
+    }
+    input {
+      font-size: 16px;
+      padding: 5px;
+      border: 2px solid #A67C52;
+      border-radius: 5px;
+      background-color: #FAE1DD;
+      margin-right: 5px;
+    }
+    button {
+      background-color: #A67C52;
+      color: #FAE1DD;
+      border: none;
+      border-radius: 5px;
+      padding: 7px 12px;
+      cursor: pointer;
+      font-size: 16px;
+      margin-bottom: 5px;
+    }
+    button:hover {
+      opacity: 0.8;
+    }
   </style>
 </head>
 <body>
@@ -64,11 +164,13 @@
   
   <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
+  
   <!-- Firebase compat-skript -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
   <script>
-    // Firebase-konfiguration
+    // -------------------- Firebase-konfiguration --------------------
     const firebaseConfig = {
       apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
       authDomain: "video-chatt-15cd1.firebaseapp.com",
@@ -79,16 +181,16 @@
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
-  </script>
-  <script>
-    // Globala variabler
+
+    // -------------------- Globala variabler --------------------
     let userAlias = 'Anonym';
     let player = null;
-    // Referenser till Firestore-samlingar
+
+    // -------------------- Firestore-samlingar --------------------
     const chatRef = db.collection('chat');
     const playlistRef = db.collection('playlist');
 
-    // Funktion för att sätta alias
+    // -------------------- Alias --------------------
     function setAlias() {
       const aliasInput = document.getElementById('aliasInput');
       const aliasValue = aliasInput.value.trim();
@@ -101,7 +203,7 @@
       }
     }
 
-    // Funktion för att skicka chattmeddelande
+    // -------------------- Skicka chattmeddelande --------------------
     function sendMessage() {
       const input = document.getElementById('chatInput');
       const messageText = input.value.trim();
@@ -110,6 +212,7 @@
         return;
       }
       console.log("Skickar meddelande: " + messageText);
+
       chatRef.add({
         alias: userAlias,
         message: messageText,
@@ -122,7 +225,7 @@
       .catch(err => console.error("Fel vid meddelande-sändning: ", err));
     }
 
-    // Funktion för att lägga till video i spellistan
+    // -------------------- Lägg till video i spellistan --------------------
     function addToPlaylist() {
       const urlInput = document.getElementById('youtubeUrl');
       const url = urlInput.value;
@@ -144,14 +247,14 @@
       }
     }
 
-    // Funktion för att extrahera YouTube-ID
+    // -------------------- Extrahera YouTube-ID --------------------
     function extractYouTubeID(url) {
       const regExp = /^.*(youtu\.be\/|v\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
       const match = url.match(regExp);
       return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // Starta videon med YouTube IFrame API
+    // -------------------- Starta videon (blockera annonser, ingen paus) --------------------
     function startVideo(videoObj) {
       if (!(window.YT && YT.Player)) {
         console.warn("YT API inte redo, försöker igen om 500ms...");
@@ -162,9 +265,26 @@
         width: '100%',
         height: '100%',
         videoId: videoObj.videoId,
-        playerVars: { autoplay: 1 },
+        playerVars: {
+          autoplay: 1,
+          modestbranding: 1, // Dölj YouTube-logga
+          rel: 0,           // Inga rekommenderade videos
+          disablekb: 1      // Inaktivera tangentbordskontroll
+        },
         events: {
           'onStateChange': (event) => {
+            // Blockera annonser – hoppa fram 5s & mute om videon är UNSTARTED
+            if (event.data === YT.PlayerState.UNSTARTED) {
+              console.log("Försöker blockera ev. annons...");
+              player.mute();           // Muta ifall det är en annons
+              player.seekTo(5, true);  // Hoppa fram 5 sek
+            }
+            // Hindra paus
+            if (event.data === YT.PlayerState.PAUSED) {
+              console.log("Någon försökte pausa – startar videon igen!");
+              player.playVideo(); // Tvinga videon att starta igen
+            }
+            // När videon är slut – ta bort den från Firestore
             if (event.data === YT.PlayerState.ENDED) {
               playlistRef.doc(videoObj.id)
                 .delete()
@@ -177,7 +297,7 @@
       });
     }
 
-    // Lyssna på förändringar i Firestore för chatt och spellista
+    // -------------------- Realtidslyssnare för chatt --------------------
     chatRef.orderBy('timestamp').onSnapshot(snapshot => {
       const chatMessages = document.getElementById('chatMessages');
       chatMessages.innerHTML = '';
@@ -191,10 +311,11 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
+    // -------------------- Realtidslyssnare för spellistan --------------------
     playlistRef.orderBy('timestamp').onSnapshot(snapshot => {
       const playlistDiv = document.getElementById('playlist');
       playlistDiv.innerHTML = '';
-      let videos = [];
+      const videos = [];
       snapshot.forEach(doc => {
         const data = doc.data();
         videos.push({ id: doc.id, ...data });
@@ -210,8 +331,8 @@
       }
     });
 
-    // När DOM är redo, bind eventlyssnare
-    document.addEventListener('DOMContentLoaded', function() {
+    // -------------------- Eventlyssnare när DOM är redo --------------------
+    document.addEventListener('DOMContentLoaded', () => {
       console.log("DOM är redo, binder eventlyssnare");
       document.getElementById('aliasBtn').addEventListener('click', setAlias);
       document.getElementById('aliasInput').addEventListener('keydown', (e) => {
