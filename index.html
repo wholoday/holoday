@@ -159,43 +159,43 @@
 
   <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
-  <!-- Firebase compat-skript -->
+  <!-- Firebase-skript (compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
   <script>
     // -------------------- Firebase-konfiguration --------------------
     const firebaseConfig = {
-  apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
-  authDomain: "video-chatt-15cd1.firebaseapp.com",
-  projectId: "video-chatt-15cd1",
-  storageBucket: "video-chatt-15cd1.firebasestorage.app",
-  messagingSenderId: "1071939099962",
-  appId: "1:1071939099962:web:70a186c0bb1abc1760c403"
-};
+      apiKey: "AIzaSyAJXUP9OTTmXwFEci5VXvEqvsARdet8q-E",
+      authDomain: "video-chatt-15cd1.firebaseapp.com",
+      projectId: "video-chatt-15cd1",
+      storageBucket: "video-chatt-15cd1.firebasestorage.app",
+      messagingSenderId: "1071939099962",
+      appId: "1:1071939099962:web:70a186c0bb1abc1760c403"
+    };
 
-// Initiera Firebase
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+    // Initiera Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
-// LÄGG TILL DETTA EFTER FIREBASE INITIERATS:
-console.log("Firestore initierat:", firebase.firestore());
+    // Logga att Firebase initierats korrekt
+    console.log("🔥 Firebase har startat:", firebase.apps.length);
+    console.log("📁 Firestore objekt:", db);
+    console.log("Firestore initierat:", firebase.firestore());
 
     // -------------------- Globala variabler --------------------
     let userAlias = 'Anonym';
     let player = null;
-    let currentVideoDocRef = null;  // Dokumentet för den aktuella videon
-    let syncInterval = null;        // Interval för att kontrollera sluttid
-    let timeOffset = 0;             // (UTC - lokal tid) i sekunder
-    const BUFFER = 5;               // Buffert i sekunder mellan videor
+    let currentVideoDocRef = null;
+    let syncInterval = null;
+    let timeOffset = 0;  // (UTC - lokal tid) i sekunder
+    const BUFFER = 5;    // Buffert i sekunder mellan videor
 
     // -------------------- Funktion: Hämta absolut UTC-tid --------------------
     function fetchWorldTime() {
-      // Använder worldtimeapi.org – OBS: kontrollera att CORS fungerar
       fetch("https://worldtimeapi.org/api/timezone/Etc/UTC")
         .then(response => response.json())
         .then(data => {
-          // data.unixtime innehåller den aktuella UTC-tiden i sekunder
           const utc = data.unixtime;
           const local = Date.now() / 1000;
           timeOffset = utc - local;
@@ -221,8 +221,7 @@ console.log("Firestore initierat:", firebase.firestore());
         userAlias = aliasValue;
         document.getElementById('aliasContainer').style.display = 'none';
         console.log("Alias satt till:", userAlias);
-        // Hämta UTC-tid och beräkna offset
-        fetchWorldTime();
+        fetchWorldTime();  // Hämta UTC-tid när aliaset är satt
       }
     }
 
@@ -236,12 +235,12 @@ console.log("Firestore initierat:", firebase.firestore());
       const text = input.value.trim();
       if (!text) return;
       chatRef.add({
-  alias: userAlias,
-  message: messageText,
-  timestamp: firebase.firestore.FieldValue.serverTimestamp()
-})
-.then(() => console.log("Meddelande skickat"))
-.catch(err => console.error("Fel vid meddelande-sändning:", err));
+        alias: userAlias,
+        message: text,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      }).then(() => {
+        input.value = '';
+      }).catch(err => console.error("Fel vid meddelande-sändning:", err));
     }
 
     // -------------------- Lägg till video --------------------
@@ -283,13 +282,13 @@ console.log("Firestore initierat:", firebase.firestore());
         return;
       }
 
-      // Rensa ev. tidigare interval
+      // Rensa eventuellt tidigare interval
       if (syncInterval) {
         clearInterval(syncInterval);
         syncInterval = null;
       }
 
-      // Spara referens till detta videos dokument
+      // Spara referensen till detta videos dokument
       currentVideoDocRef = playlistRef.doc(videoObj.id);
 
       console.log("Startar video med ID:", videoObj.videoId);
@@ -309,48 +308,73 @@ console.log("Firestore initierat:", firebase.firestore());
         events: {
           onReady: (event) => {
             console.log("Video är redo.");
-            // Hämta videons längd (getDuration() blir tillgängligt efter lite tid)
-            const duration = player.getDuration();
-            // Hämta absolut starttid
-            const absStart = getCurrentAbsoluteTime();
-            // Beräkna absolut sluttid med buffert
-            const absEnd = absStart + duration + BUFFER;
-            console.log("absStart:", absStart, "duration:", duration, "absEnd (med buffer):", absEnd);
-            // Uppdatera dokumentet med start- och sluttid
-            currentVideoDocRef.update({
-              absoluteStart: absStart,
-              absoluteEnd: absEnd,
-              duration: duration
-            }).catch(err => console.error("Fel vid uppdatering av start/slut-tider:", err));
+            // Hämta videolängd – om getDuration() returnerar 0, försök igen lite senare
+            let duration = player.getDuration();
+            if (duration <= 0) {
+              setTimeout(() => {
+                duration = player.getDuration();
+                proceedWithSync(duration);
+              }, 2000);
+            } else {
+              proceedWithSync(duration);
+            }
 
-            // Starta ett interval som kontrollerar absolut tid
-            syncInterval = setInterval(() => {
-              const nowAbs = getCurrentAbsoluteTime();
-              currentVideoDocRef.get().then(doc => {
-                if (doc.exists) {
-                  const data = doc.data();
-                  if (data.absoluteEnd && nowAbs >= data.absoluteEnd) {
-                    console.log("Nu har den absoluta sluttiden nåtts:", nowAbs, ">=", data.absoluteEnd);
-                    // Tvinga stopp av videon
-                    player.stopVideo();
-                    // Radera dokumentet (för att signalera att videon är slut)
-                    currentVideoDocRef.delete().then(() => {
-                      console.log("Videon raderad från Firestore.");
-                    }).catch(err => console.error("Fel vid radering av video:", err));
-                    clearInterval(syncInterval);
-                    syncInterval = null;
+            function proceedWithSync(duration) {
+              const absStart = getCurrentAbsoluteTime();
+              const absEnd = absStart + duration + BUFFER;
+              console.log("absStart:", absStart, "duration:", duration, "absEnd (med buffer):", absEnd);
+              // Uppdatera dokumentet med start- och sluttid
+              currentVideoDocRef.update({
+                absoluteStart: absStart,
+                absoluteEnd: absEnd,
+                duration: duration
+              }).catch(err => console.error("Fel vid uppdatering av start/slut-tider:", err));
+
+              // Starta ett interval som kontrollerar absolut tid
+              syncInterval = setInterval(() => {
+                const nowAbs = getCurrentAbsoluteTime();
+                currentVideoDocRef.get().then(doc => {
+                  if (doc.exists) {
+                    const data = doc.data();
+                    if (data.absoluteEnd && nowAbs >= data.absoluteEnd) {
+                      console.log("Absolut sluttid nådd:", nowAbs, ">=", data.absoluteEnd);
+                      // Stoppa videon
+                      player.stopVideo();
+                      // Radera dokumentet för att signalera att videon är slut
+                      currentVideoDocRef.delete().then(() => {
+                        console.log("Videon raderad från Firestore.");
+                      }).catch(err => console.error("Fel vid radering av video:", err));
+                      clearInterval(syncInterval);
+                      syncInterval = null;
+                    }
                   }
-                }
-              });
-            }, 1000);
+                });
+              }, 1000);
+            }
 
-            // Även om någon försöker pausa, tvinga igång videon
+            // Lägg till en eventlyssnare för att tvinga igång videon om någon försöker pausa
             player.addEventListener('onStateChange', (e) => {
               if (e.data === YT.PlayerState.PAUSED) {
                 console.log("Paus upptäckt – tvingar igång videon.");
                 player.playVideo();
               }
             });
+          },
+          onStateChange: (event) => {
+            if (event.data === YT.PlayerState.ENDED) {
+              console.log("Videon är slut.");
+              // Endast radera dokumentet vid videons slut
+              if (syncInterval) {
+                clearInterval(syncInterval);
+                syncInterval = null;
+              }
+              player = null;
+              setTimeout(() => {
+                currentVideoDocRef.delete()
+                  .then(() => console.log("Video raderad från Firestore."))
+                  .catch(err => console.error("Fel vid radering av video:", err));
+              }, 300);
+            }
           }
         }
       });
@@ -366,7 +390,7 @@ console.log("Firestore initierat:", firebase.firestore());
       });
       console.log("Spellista uppdaterad, videor:", videos);
 
-      // Visa spellistan
+      // Visa videorna i spellistan
       videos.forEach((vid, idx) => {
         const itemDiv = document.createElement('div');
         itemDiv.classList.add('playlist-item');
@@ -374,7 +398,7 @@ console.log("Firestore initierat:", firebase.firestore());
         playlistDiv.appendChild(itemDiv);
       });
 
-      // Om spelaren inte är aktiv och det finns videor, starta nästa video
+      // Om ingen spelare finns och det finns videor, starta nästa video
       if (!player && videos.length > 0) {
         console.log("Ingen aktiv spelare, startar nästa video:", videos[0]);
         startVideo(videos[0]);
