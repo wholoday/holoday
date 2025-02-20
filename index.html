@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt 2</title>
+  <title>YouTube Chatt</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -160,7 +160,6 @@
   
   <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
-  
   <!-- Firebase compat-skript -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -270,21 +269,17 @@
         return;
       }
 
-      // Stäng eventuellt tidigare interval
+      // Rensa ev. tidigare interval
       if (syncInterval) {
         clearInterval(syncInterval);
         syncInterval = null;
       }
 
-      // Sätt docRef till denna video
+      // Sätt referensen till detta videos dokument
       currentVideoDocRef = playlistRef.doc(videoObj.id);
 
-      // Kolla om nuvarande användare är ägaren
-      const isOwner = (videoObj.addedBy === userAlias);
-
-      console.log("Skapar spelare för video:", videoObj.videoId, "Ägare?", isOwner);
-
-      // Skapa YouTube-spelaren
+      // Vi tar bort möjligheten att pausa – alla tvingas se klart videon
+      console.log("Skapar spelare för video:", videoObj.videoId);
       player = new YT.Player('videoContainer', {
         width: '100%',
         height: '100%',
@@ -293,112 +288,60 @@
           autoplay: 1,
           modestbranding: 1,
           rel: 0,
-          disablekb: isOwner ? 0 : 1
+          disablekb: 1  // Ingen får styra med tangentbordet, ingen pausning
         },
         events: {
           'onReady': () => {
             console.log("Video laddad, lyssnar på Firestore för synk...");
 
-            // Lyssna i realtid på detta videos dokument
+            // Lyssna på förändringar i detta videos dokument
             currentVideoDocRef.onSnapshot((doc) => {
               if (!doc.exists) {
                 console.log("Dokumentet togs bort, ingen video längre.");
                 return;
               }
               const data = doc.data();
-              if (!isOwner) {
-                syncPlayerToFirestore(data);
-              }
+              // För alla (eftersom ingen får pausa) gör vi inte synk, vi litar på att videon spelas kontinuerligt
             });
 
-            // Om ägaren, uppdatera currentTime var 1 sekund
-            if (isOwner) {
-              syncInterval = setInterval(() => {
-                if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
-                  currentVideoDocRef.update({
-                    currentTime: player.getCurrentTime()
-                  }).catch(err => console.error("Fel att uppdatera tid:", err));
-                }
-              }, 1000);
-            }
+            // Sätt ett interval som uppdaterar currentTime var 1 sekund
+            syncInterval = setInterval(() => {
+              if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+                currentVideoDocRef.update({
+                  currentTime: player.getCurrentTime()
+                }).catch(err => console.error("Fel att uppdatera tid:", err));
+              }
+            }, 1000);
           },
           'onStateChange': (event) => {
-            // 1. Blockera eventuella annonser – hoppa fram 5 sekunder vid UNSTARTED
-            if (event.data === YT.PlayerState.UNSTARTED) {
-              console.log("UNSTARTED, hoppar 5s för ev. annons");
-              player.mute();
-              player.seekTo(5, true);
+            // Om någon försöker pausa (oavsett vem), tvinga igång videon
+            if (event.data === YT.PlayerState.PAUSED) {
+              console.log("Paus upptäckt – startar videon igen.");
+              player.playVideo();
             }
-
-            // 2. Hantera paus och spel
-            if (isOwner) {
-              if (event.data === YT.PlayerState.PAUSED) {
-                const nowTime = player.getCurrentTime();
-                console.log("Ägaren pausade vid tid:", nowTime);
-                currentVideoDocRef.update({
-                  paused: true,
-                  currentTime: nowTime
-                }).catch(err => console.error("Fel vid uppdatering (paus):", err));
-              }
-              if (event.data === YT.PlayerState.PLAYING) {
-                const nowTime = player.getCurrentTime();
-                console.log("Ägaren spelar, tid:", nowTime);
-                currentVideoDocRef.update({
-                  paused: false,
-                  currentTime: nowTime
-                }).catch(err => console.error("Fel vid uppdatering (play):", err));
-              }
-            } else {
-              // Icke-ägare får inte pausa – tvinga igång videon
-              if (event.data === YT.PlayerState.PAUSED) {
-                console.log("Icke-ägare försökte pausa – startar videon igen!");
-                player.playVideo();
-              }
-            }
-
-            // 3. När videon är slut – radera dokumentet (oavsett vem)
+            // När videon är slut, markera dokumentet som avslutat och radera det
             if (event.data === YT.PlayerState.ENDED) {
-              console.log("Videon är slut. Rensar interval och tar bort dokument...");
+              console.log("Videon är slut. Rensar interval och markerar dokumentet som avslutat...");
               if (syncInterval) {
                 clearInterval(syncInterval);
                 syncInterval = null;
               }
-              // Sätt player = null direkt
-              player = null;
-              // Vänta lite innan borttagning så att onSnapshot hinner uppdatera
-              setTimeout(() => {
-                playlistRef.doc(videoObj.id)
-                  .delete()
-                  .then(() => console.log("Video borttagen efter slut"))
-                  .catch(err => console.error("Fel vid borttagning av video: ", err));
-              }, 200);
+              // Uppdatera dokumentet med 'ended: true'
+              currentVideoDocRef.update({ ended: true })
+                .then(() => {
+                  // Sätt player till null och vänta kort innan vi raderar dokumentet
+                  player = null;
+                  setTimeout(() => {
+                    currentVideoDocRef.delete()
+                      .then(() => console.log("Video dokument raderat efter slut."))
+                      .catch(err => console.error("Fel vid borttagning av video:", err));
+                  }, 200);
+                })
+                .catch(err => console.error("Fel vid uppdatering (ended):", err));
             }
           }
         }
       });
-    }
-
-    // -------------------- Synka icke-ägares spelare med Firestore-data --------------------
-    function syncPlayerToFirestore(data) {
-      if (data.paused) {
-        if (player.getPlayerState() !== YT.PlayerState.PAUSED) {
-          console.log("Synk: pausar lokalt. Tid från Firestore:", data.currentTime);
-          player.pauseVideo();
-          player.seekTo(data.currentTime, true);
-        }
-      } else {
-        if (player.getPlayerState() !== YT.PlayerState.PLAYING) {
-          console.log("Synk: spelar lokalt. Tid från Firestore:", data.currentTime);
-          player.playVideo();
-          player.seekTo(data.currentTime, true);
-        } else {
-          const diff = Math.abs(player.getCurrentTime() - data.currentTime);
-          if (diff > 2) {
-            console.log("Synk: justerar tid. Firestore tid:", data.currentTime, "diff:", diff);
-            player.seekTo(data.currentTime, true);
-          }
-        }
-      }
     }
 
     // -------------------- Realtidslyssnare för chatt --------------------
@@ -422,10 +365,13 @@
       const videos = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        videos.push({ id: doc.id, ...data });
+        // Filtrera bort videor som markerats som avslutade
+        if (!data.ended) {
+          videos.push({ id: doc.id, ...data });
+        }
       });
 
-      console.log("Spellista uppdaterad, videos:", videos);
+      console.log("Spellista uppdaterad, videor:", videos);
 
       // Visa videorna i listan
       videos.forEach((vid, idx) => {
@@ -437,7 +383,7 @@
 
       // Om ingen spelare finns och det finns videor, starta nästa video
       if (!player && videos.length > 0) {
-        console.log("Ingen spelare, men videos finns. Startar nästa video:", videos[0]);
+        console.log("Ingen spelare, men videor finns. Startar nästa video:", videos[0]);
         startVideo(videos[0]);
       }
       // Om listan är tom, rensa videofönstret
