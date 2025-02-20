@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt – ynkron uppspelning</title>
+  <title>YouTube Chatt – Absolut Synkronisering</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -178,7 +178,31 @@
 
     // -------------------- Globala variabler --------------------
     let userAlias = 'Anonym';
-    let player = null; // Varje klient laddar sin egen spelare
+    let player = null;
+    let currentVideoDocRef = null;  // Dokumentet för den aktuella videon
+    let syncInterval = null;        // Interval för att kontrollera sluttid
+    let timeOffset = 0;             // (UTC - lokal tid) i sekunder
+    const BUFFER = 5;               // Buffert i sekunder mellan videor
+
+    // -------------------- Funktion: Hämta absolut UTC-tid --------------------
+    function fetchWorldTime() {
+      // Använder worldtimeapi.org – OBS: kontrollera att CORS fungerar
+      fetch("https://worldtimeapi.org/api/timezone/Etc/UTC")
+        .then(response => response.json())
+        .then(data => {
+          // data.unixtime innehåller den aktuella UTC-tiden i sekunder
+          const utc = data.unixtime;
+          const local = Date.now() / 1000;
+          timeOffset = utc - local;
+          console.log("Time offset satt till", timeOffset, "sekunder.");
+        })
+        .catch(error => console.error("Fel vid hämtning av UTC-tid:", error));
+    }
+
+    // -------------------- Funktion: Hämta aktuell absolut tid --------------------
+    function getCurrentAbsoluteTime() {
+      return (Date.now() / 1000) + timeOffset;
+    }
 
     // -------------------- Firestore-samlingar --------------------
     const chatRef = db.collection('chat');
@@ -192,6 +216,8 @@
         userAlias = aliasValue;
         document.getElementById('aliasContainer').style.display = 'none';
         console.log("Alias satt till:", userAlias);
+        // Hämta UTC-tid och beräkna offset
+        fetchWorldTime();
       }
     }
 
@@ -244,7 +270,7 @@
       return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // -------------------- Starta videon --------------------
+    // -------------------- Starta videon med absolut synk --------------------
     function startVideo(videoObj) {
       if (!(window.YT && YT.Player)) {
         console.warn("YT API inte redo, försöker igen om 500ms...");
@@ -252,7 +278,18 @@
         return;
       }
 
+      // Rensa ev. tidigare interval
+      if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+      }
+
+      // Spara referens till detta videos dokument
+      currentVideoDocRef = playlistRef.doc(videoObj.id);
+
       console.log("Startar video med ID:", videoObj.videoId);
+
+      // Skapa YouTube-spelaren (kontroller avaktiverade)
       player = new YT.Player('videoContainer', {
         width: '100%',
         height: '100%',
@@ -265,20 +302,50 @@
           rel: 0
         },
         events: {
-          onStateChange: (event) => {
-            // Ingen får pausa: om paus detekteras, tvinga igång
-            if (event.data === YT.PlayerState.PAUSED) {
-              console.log("Paus upptäckt – tvingar igång videon.");
-              player.playVideo();
-            }
-            // När videon är slut: radera dokumentet, vilket triggar nästa video
-            if (event.data === YT.PlayerState.ENDED) {
-              console.log("Video slut – tar bort dokumentet från Firestore.");
-              player = null;
-              playlistRef.doc(videoObj.id).delete()
-                .then(() => console.log("Video raderad."))
-                .catch(err => console.error("Fel vid radering:", err));
-            }
+          onReady: (event) => {
+            console.log("Video är redo.");
+            // Hämta videons längd (getDuration() blir tillgängligt efter lite tid)
+            const duration = player.getDuration();
+            // Hämta absolut starttid
+            const absStart = getCurrentAbsoluteTime();
+            // Beräkna absolut sluttid med buffert
+            const absEnd = absStart + duration + BUFFER;
+            console.log("absStart:", absStart, "duration:", duration, "absEnd (med buffer):", absEnd);
+            // Uppdatera dokumentet med start- och sluttid
+            currentVideoDocRef.update({
+              absoluteStart: absStart,
+              absoluteEnd: absEnd,
+              duration: duration
+            }).catch(err => console.error("Fel vid uppdatering av start/slut-tider:", err));
+
+            // Starta ett interval som kontrollerar absolut tid
+            syncInterval = setInterval(() => {
+              const nowAbs = getCurrentAbsoluteTime();
+              currentVideoDocRef.get().then(doc => {
+                if (doc.exists) {
+                  const data = doc.data();
+                  if (data.absoluteEnd && nowAbs >= data.absoluteEnd) {
+                    console.log("Nu har den absoluta sluttiden nåtts:", nowAbs, ">=", data.absoluteEnd);
+                    // Tvinga stopp av videon
+                    player.stopVideo();
+                    // Radera dokumentet (för att signalera att videon är slut)
+                    currentVideoDocRef.delete().then(() => {
+                      console.log("Videon raderad från Firestore.");
+                    }).catch(err => console.error("Fel vid radering av video:", err));
+                    clearInterval(syncInterval);
+                    syncInterval = null;
+                  }
+                }
+              });
+            }, 1000);
+
+            // Även om någon försöker pausa, tvinga igång videon
+            player.addEventListener('onStateChange', (e) => {
+              if (e.data === YT.PlayerState.PAUSED) {
+                console.log("Paus upptäckt – tvingar igång videon.");
+                player.playVideo();
+              }
+            });
           }
         }
       });
@@ -294,7 +361,7 @@
       });
       console.log("Spellista uppdaterad, videor:", videos);
 
-      // Visa videorna i spellistan
+      // Visa spellistan
       videos.forEach((vid, idx) => {
         const itemDiv = document.createElement('div');
         itemDiv.classList.add('playlist-item');
@@ -302,14 +369,14 @@
         playlistDiv.appendChild(itemDiv);
       });
 
-      // Om ingen spelare och det finns videor, starta nästa video
+      // Om spelaren inte är aktiv och det finns videor, starta nästa video
       if (!player && videos.length > 0) {
         console.log("Ingen aktiv spelare, startar nästa video:", videos[0]);
         startVideo(videos[0]);
       }
       // Om listan är tom, rensa videofönstret
       else if (videos.length === 0) {
-        console.log("Ingen video i spellistan, rensar videofönstret.");
+        console.log("Ingen video i spellistan – rensar videofönstret.");
         document.getElementById('videoContainer').innerHTML = '';
         player = null;
       }
