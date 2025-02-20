@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt 5</title>
+  <title>YouTube Chatt</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -360,11 +360,17 @@
                 clearInterval(syncInterval);
                 syncInterval = null;
               }
-              playlistRef.doc(videoObj.id)
-                .delete()
-                .then(() => console.log("Video borttagen efter slut"))
-                .catch(err => console.error("Fel vid borttagning av video: ", err));
+
+              // Sätt player = null först
               player = null;
+
+              // Vänta 200ms innan vi tar bort dokumentet
+              setTimeout(() => {
+                playlistRef.doc(videoObj.id)
+                  .delete()
+                  .then(() => console.log("Video borttagen efter slut"))
+                  .catch(err => console.error("Fel vid borttagning av video: ", err));
+              }, 200);
             }
           }
         }
@@ -407,7 +413,7 @@
     });
 
     // -------------------- Realtidslyssnare för spellistan --------------------
-    playlistRef.orderBy('timestamp').onSnapshot(snapshot => {
+    playlistRef.orderBy('timestamp', 'asc').onSnapshot(snapshot => {
       const playlistDiv = document.getElementById('playlist');
       playlistDiv.innerHTML = '';
       const videos = [];
@@ -415,6 +421,8 @@
         const data = doc.data();
         videos.push({ id: doc.id, ...data });
       });
+
+      console.log("Spellista uppdaterad, videos:", videos);
 
       // Visa nya listan
       videos.forEach((vid, idx) => {
@@ -426,10 +434,12 @@
 
       // Om ingen spelare finns och det finns videor -> starta första
       if (!player && videos.length > 0) {
+        console.log("Startar nästa video:", videos[0]);
         startVideo(videos[0]);
       }
       // Om listan är tom -> töm videofönstret (startläge)
       else if (videos.length === 0) {
+        console.log("Spellistan är tom, rensar fönstret.");
         document.getElementById('videoContainer').innerHTML = '';
         player = null;
         currentVideoDocRef = null;
