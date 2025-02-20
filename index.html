@@ -3,20 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt 5</title>
+  <title>YouTube Chatt</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Patrick Hand', cursive;
       background-color: #D8C3A5;
       color: #5E4635;
       background-image: url('https://www.transparenttextures.com/patterns/beige-paper.png');
-      overflow: hidden; /* Ingen scroll */
+      overflow: hidden;
     }
     .main-container {
       width: 63vw;
@@ -164,7 +160,6 @@
   
   <!-- YouTube IFrame API -->
   <script src="https://www.youtube.com/iframe_api"></script>
-  
   <!-- Firebase compat-skript -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -184,7 +179,9 @@
 
     // -------------------- Globala variabler --------------------
     let userAlias = 'Anonym';
-    let player = null;
+    let player = null;              // YouTube Player-instans
+    let currentVideoDocRef = null;  // Referens till den video som spelas
+    let syncInterval = null;        // Interval för att uppdatera tid i Firestore
 
     // -------------------- Firestore-samlingar --------------------
     const chatRef = db.collection('chat');
@@ -205,6 +202,10 @@
 
     // -------------------- Skicka chattmeddelande --------------------
     function sendMessage() {
+      if (userAlias === 'Anonym') {
+        alert("Du måste ange alias först.");
+        return;
+      }
       const input = document.getElementById('chatInput');
       const messageText = input.value.trim();
       if (!messageText) {
@@ -227,6 +228,10 @@
 
     // -------------------- Lägg till video i spellistan --------------------
     function addToPlaylist() {
+      if (userAlias === 'Anonym') {
+        alert("Du måste ange alias först.");
+        return;
+      }
       const urlInput = document.getElementById('youtubeUrl');
       const url = urlInput.value;
       const videoId = extractYouTubeID(url);
@@ -235,7 +240,9 @@
         playlistRef.add({
           videoId: videoId,
           addedBy: userAlias,
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+          paused: false,
+          currentTime: 0
         })
         .then(() => { 
           console.log("Video tillagd i spellistan!");
@@ -254,46 +261,83 @@
       return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // -------------------- Starta videon (blockera annonser, ingen paus om ej ägare) --------------------
+    // -------------------- Starta videon (synkad via Firestore) --------------------
     function startVideo(videoObj) {
       if (!(window.YT && YT.Player)) {
         console.warn("YT API inte redo, försöker igen om 500ms...");
         setTimeout(() => startVideo(videoObj), 500);
         return;
       }
-      // Kolla om nuvarande användare är ägaren av videon
-      const isOwner = (videoObj.addedBy === userAlias);
 
+      // Rensa ev. tidigare interval
+      if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
+      }
+
+      // Sätt referensen till detta videos dokument
+      currentVideoDocRef = playlistRef.doc(videoObj.id);
+
+      // Vi tar bort möjligheten att pausa – alla tvingas se klart videon
+      console.log("Skapar spelare för video:", videoObj.videoId);
       player = new YT.Player('videoContainer', {
         width: '100%',
         height: '100%',
         videoId: videoObj.videoId,
         playerVars: {
           autoplay: 1,
-          modestbranding: 1, // Dölj YouTube-logga
-          rel: 0,           // Inga rekommenderade videos
-          disablekb: isOwner ? 0 : 1 // Ägaren kan använda tangentbordskontroller, andra inte
+          modestbranding: 1,
+          rel: 0,
+          disablekb: 1  // Ingen får styra med tangentbordet, ingen pausning
         },
         events: {
+          'onReady': () => {
+            console.log("Video laddad, lyssnar på Firestore för synk...");
+
+            // Lyssna på förändringar i detta videos dokument
+            currentVideoDocRef.onSnapshot((doc) => {
+              if (!doc.exists) {
+                console.log("Dokumentet togs bort, ingen video längre.");
+                return;
+              }
+              const data = doc.data();
+              // För alla (eftersom ingen får pausa) gör vi inte synk, vi litar på att videon spelas kontinuerligt
+            });
+
+            // Sätt ett interval som uppdaterar currentTime var 1 sekund
+            syncInterval = setInterval(() => {
+              if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+                currentVideoDocRef.update({
+                  currentTime: player.getCurrentTime()
+                }).catch(err => console.error("Fel att uppdatera tid:", err));
+              }
+            }, 1000);
+          },
           'onStateChange': (event) => {
-            // Blockera annonser – hoppa fram 5s & mute om videon är UNSTARTED
-            if (event.data === YT.PlayerState.UNSTARTED) {
-              console.log("Försöker blockera ev. annons...");
-              player.mute();
-              player.seekTo(5, true);
-            }
-            // Hindra paus om man ej är ägaren
-            if (event.data === YT.PlayerState.PAUSED && !isOwner) {
-              console.log("Icke-ägare försökte pausa – startar videon igen!");
+            // Om någon försöker pausa (oavsett vem), tvinga igång videon
+            if (event.data === YT.PlayerState.PAUSED) {
+              console.log("Paus upptäckt – startar videon igen.");
               player.playVideo();
             }
-            // När videon är slut -> ta bort den från Firestore
+            // När videon är slut, markera dokumentet som avslutat och radera det
             if (event.data === YT.PlayerState.ENDED) {
-              playlistRef.doc(videoObj.id)
-                .delete()
-                .then(() => console.log("Video borttagen efter slut"))
-                .catch(err => console.error("Fel vid borttagning av video: ", err));
-              player = null;
+              console.log("Videon är slut. Rensar interval och markerar dokumentet som avslutat...");
+              if (syncInterval) {
+                clearInterval(syncInterval);
+                syncInterval = null;
+              }
+              // Uppdatera dokumentet med 'ended: true'
+              currentVideoDocRef.update({ ended: true })
+                .then(() => {
+                  // Sätt player till null och vänta kort innan vi raderar dokumentet
+                  player = null;
+                  setTimeout(() => {
+                    currentVideoDocRef.delete()
+                      .then(() => console.log("Video dokument raderat efter slut."))
+                      .catch(err => console.error("Fel vid borttagning av video:", err));
+                  }, 200);
+                })
+                .catch(err => console.error("Fel vid uppdatering (ended):", err));
             }
           }
         }
@@ -314,17 +358,22 @@
       chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
-    // -------------------- Realtidslyssnare för spellistan --------------------
-    playlistRef.orderBy('timestamp').onSnapshot(snapshot => {
+    // -------------------- Realtidslyssnare för spellistan (sorterad asc) --------------------
+    playlistRef.orderBy('timestamp','asc').onSnapshot(snapshot => {
       const playlistDiv = document.getElementById('playlist');
       playlistDiv.innerHTML = '';
       const videos = [];
       snapshot.forEach(doc => {
         const data = doc.data();
-        videos.push({ id: doc.id, ...data });
+        // Filtrera bort videor som markerats som avslutade
+        if (!data.ended) {
+          videos.push({ id: doc.id, ...data });
+        }
       });
 
-      // Visa nya listan
+      console.log("Spellista uppdaterad, videor:", videos);
+
+      // Visa videorna i listan
       videos.forEach((vid, idx) => {
         const itemDiv = document.createElement('div');
         itemDiv.classList.add('playlist-item');
@@ -332,14 +381,23 @@
         playlistDiv.appendChild(itemDiv);
       });
 
-      // Om ingen spelare finns och det finns videor -> starta första
+      // Om ingen spelare finns och det finns videor, starta nästa video
       if (!player && videos.length > 0) {
+        console.log("Ingen spelare, men videor finns. Startar nästa video:", videos[0]);
         startVideo(videos[0]);
       }
-      // Om listan är tom -> töm videofönstret (startläge)
+      // Om listan är tom, rensa videofönstret
       else if (videos.length === 0) {
+        console.log("Spellistan är tom, rensar videofönstret.");
         document.getElementById('videoContainer').innerHTML = '';
         player = null;
+        currentVideoDocRef = null;
+        if (syncInterval) {
+          clearInterval(syncInterval);
+          syncInterval = null;
+        }
+      } else {
+        console.log("Antal videor i listan:", videos.length, "Player =", player);
       }
     });
 
