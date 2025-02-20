@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt 2</title>
+  <title>YouTube Chatt 3</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     * {
-      margin: 0; 
-      padding: 0; 
+      margin: 0;
+      padding: 0;
       box-sizing: border-box;
     }
     body {
@@ -43,7 +43,7 @@
       height: 35vh;
       display: flex;
       gap: 2vw;
-      padding: 0 0 13px 0; /* Lite luft under */
+      padding-bottom: 13px;
     }
     /* Chatt-delen */
     .chat-container {
@@ -254,13 +254,16 @@
       return (match && match[2].length === 11) ? match[2] : null;
     }
 
-    // -------------------- Starta videon (blockera annonser, ingen paus) --------------------
+    // -------------------- Starta videon (blockera annonser, ingen paus om ej ägare) --------------------
     function startVideo(videoObj) {
       if (!(window.YT && YT.Player)) {
         console.warn("YT API inte redo, försöker igen om 500ms...");
         setTimeout(() => startVideo(videoObj), 500);
         return;
       }
+      // Kolla om nuvarande användare är ägaren av videon
+      const isOwner = (videoObj.addedBy === userAlias);
+
       player = new YT.Player('videoContainer', {
         width: '100%',
         height: '100%',
@@ -269,22 +272,22 @@
           autoplay: 1,
           modestbranding: 1, // Dölj YouTube-logga
           rel: 0,           // Inga rekommenderade videos
-          disablekb: 1      // Inaktivera tangentbordskontroll
+          disablekb: isOwner ? 0 : 1 // Ägaren kan använda tangentbordskontroller, andra inte
         },
         events: {
           'onStateChange': (event) => {
             // Blockera annonser – hoppa fram 5s & mute om videon är UNSTARTED
             if (event.data === YT.PlayerState.UNSTARTED) {
               console.log("Försöker blockera ev. annons...");
-              player.mute();           // Muta ifall det är en annons
-              player.seekTo(5, true);  // Hoppa fram 5 sek
+              player.mute();
+              player.seekTo(5, true);
             }
-            // Hindra paus
-            if (event.data === YT.PlayerState.PAUSED) {
-              console.log("Någon försökte pausa – startar videon igen!");
-              player.playVideo(); // Tvinga videon att starta igen
+            // Hindra paus om man ej är ägaren
+            if (event.data === YT.PlayerState.PAUSED && !isOwner) {
+              console.log("Icke-ägare försökte pausa – startar videon igen!");
+              player.playVideo();
             }
-            // När videon är slut – ta bort den från Firestore
+            // När videon är slut -> ta bort den från Firestore
             if (event.data === YT.PlayerState.ENDED) {
               playlistRef.doc(videoObj.id)
                 .delete()
@@ -320,14 +323,23 @@
         const data = doc.data();
         videos.push({ id: doc.id, ...data });
       });
+
+      // Visa nya listan
       videos.forEach((vid, idx) => {
         const itemDiv = document.createElement('div');
         itemDiv.classList.add('playlist-item');
         itemDiv.textContent = `${idx + 1}. Lagd av: ${vid.addedBy}`;
         playlistDiv.appendChild(itemDiv);
       });
+
+      // Om ingen spelare finns och det finns videor -> starta första
       if (!player && videos.length > 0) {
         startVideo(videos[0]);
+      }
+      // Om listan är tom -> töm videofönstret (startläge)
+      else if (videos.length === 0) {
+        document.getElementById('videoContainer').innerHTML = '';
+        player = null;
       }
     });
 
