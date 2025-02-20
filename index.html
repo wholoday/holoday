@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>YouTube Chatt</title>
+  <title>YouTube Chatt 5</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -203,6 +203,10 @@
 
     // -------------------- Skicka chattmeddelande --------------------
     function sendMessage() {
+      if (userAlias === 'Anonym') {
+        alert("Du måste ange alias först.");
+        return;
+      }
       const input = document.getElementById('chatInput');
       const messageText = input.value.trim();
       if (!messageText) {
@@ -225,6 +229,10 @@
 
     // -------------------- Lägg till video i spellistan --------------------
     function addToPlaylist() {
+      if (userAlias === 'Anonym') {
+        alert("Du måste ange alias först.");
+        return;
+      }
       const urlInput = document.getElementById('youtubeUrl');
       const url = urlInput.value;
       const videoId = extractYouTubeID(url);
@@ -296,7 +304,7 @@
               if (!doc.exists) return;
               const data = doc.data();
 
-              // Om vi inte är ägare, håll oss uppdaterade
+              // Om vi inte är ägaren, håll oss uppdaterade
               if (!isOwner) {
                 syncPlayerToFirestore(data);
               }
@@ -338,7 +346,7 @@
                 }).catch(err => console.error("Fel vid uppdatering (play):", err));
               }
             } else {
-              // Icke-ägare får inte pausa -> spelas igen
+              // Icke-ägare får inte pausa -> spelaren tvingas igång igen
               if (event.data === YT.PlayerState.PAUSED) {
                 console.log("Icke-ägare försökte pausa – startar videon igen!");
                 player.playVideo();
