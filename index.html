@@ -175,6 +175,9 @@
     };
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
+console.log("🔥 Firebase har startat:", firebase.apps.length);
+console.log("📂 Firestore objekt:", db);
+
 
     // -------------------- Globala variabler --------------------
     let userAlias = 'Anonym';
@@ -231,12 +234,12 @@
       const text = input.value.trim();
       if (!text) return;
       chatRef.add({
-        alias: userAlias,
-        message: text,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-      }).then(() => {
-        input.value = '';
-      }).catch(err => console.error("Fel vid meddelande-sändning:", err));
+  alias: userAlias,
+  message: messageText,
+  timestamp: firebase.firestore.FieldValue.serverTimestamp()
+})
+.then(() => console.log("Meddelande skickat"))
+.catch(err => console.error("Fel vid meddelande-sändning:", err));
     }
 
     // -------------------- Lägg till video --------------------
