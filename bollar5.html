@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mjuk Kolliderande 3D-bollar med dynamiska ansiktsuttryck</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fafafa;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+    #myCanvas {
+      display: block;
+      margin: 0 auto;
+      border: 1px solid #999;
+      background: #fafafa;
+    }
+  </style>
+</head>
+<body>
+
+<canvas id="myCanvas"></canvas>
+
+<script>
+///////////////////////////////////////////////////////////////////////////////
+// 1) Dynamisk storlek på canvas
+///////////////////////////////////////////////////////////////////////////////
+const MIN_DIMENSION = 896;
+const MAX_DIMENSION = 2000;
+
+const canvas = document.getElementById("myCanvas");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = true;
+
+function updateCanvasSize() {
+  let w = window.innerWidth - 20;
+  let h = window.innerHeight - 20;
+  w = Math.min(MAX_DIMENSION, Math.max(MIN_DIMENSION, w));
+  h = Math.min(MAX_DIMENSION, Math.max(MIN_DIMENSION, h));
+  canvas.width = w;
+  canvas.height = h;
+}
+updateCanvasSize();
+window.addEventListener('resize', () => {
+  updateCanvasSize();
+});
+
+///////////////////////////////////////////////////////////////////////////////
+// 2) Enkel gradientbakgrund
+///////////////////////////////////////////////////////////////////////////////
+function drawBackground() {
+  const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#E0DFDC");
+  gradient.addColorStop(1, "#B0A79E");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 3) Hjälpfunktioner för färg
+///////////////////////////////////////////////////////////////////////////////
+const colors = ["#A1958A", "#5E4B56", "#C1A4A2", "#6B7C85", "#E3C7A7"];
+
+function parseHexColor(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return [r, g, b];
+}
+const parsedColors = colors.map(parseHexColor);
+
+function shadeRGB([r, g, b], factor) {
+  factor = Math.max(0, Math.min(2, factor));
+  return [r * factor, g * factor, b * factor];
+}
+function rgbToString(r, g, b) {
+  return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 4) Fysik & deformation
+///////////////////////////////////////////////////////////////////////////////
+const SEGMENTS = 32;
+let K = 0.05;            // Fjäderstyrka
+let DAMP = 0.02;         // Dämpning av form
+let SMOOTH_FACTOR = 0.3;
+const OVERLAP_FACTOR = 0.98;
+const PUSH_NEIGHBORHOOD = 2;
+const BASE_PUSH_STRENGTH = 1.0;
+const SHOCK_DURATION = 30;
+const MAX_SPEED = 17;
+const MIN_SPEED = 1.5;
+const RESTITUTION = 0.99;
+
+// Inbuktning: Normal max vid 55% av radien, hård gräns vid 60%
+const MAX_INWARD_RATIO = 0.55;
+const CLAMP_INWARD_RATIO = 0.60;
+
+///////////////////////////////////////////////////////////////////////////////
+// Hjälpfunktion: Genererar ett slumpat face-objekt baserat på radien
+///////////////////////////////////////////////////////////////////////////////
+function generateFaceParameters(radius) {
+  // Utökade alternativ för variation:
+  const eyeOptions = ["round", "oval", "almond", "skewed", "wide", "narrow"];
+  const mouthOptions = ["happy", "angry", "indifferent", "surprised", "curious"];
+  return {
+    leftEyeOffset: { 
+         x: (Math.random() - 0.5) * radius * 0.2,
+         y: (Math.random() - 0.5) * radius * 0.2
+    },
+    rightEyeOffset: { 
+         x: (Math.random() - 0.5) * radius * 0.2,
+         y: (Math.random() - 0.5) * radius * 0.2
+    },
+    eyeSize: 0.8 + Math.random() * 0.4,
+    pupilSize: 0.8 + Math.random() * 0.4,
+    leftPupilOffset: {
+         x: (Math.random() - 0.5) * radius * 0.08,
+         y: (Math.random() - 0.5) * radius * 0.08
+    },
+    rightPupilOffset: {
+         x: (Math.random() - 0.5) * radius * 0.08,
+         y: (Math.random() - 0.5) * radius * 0.08
+    },
+    mouthOffset: {
+         x: (Math.random() - 0.5) * radius * 0.2,
+         y: (Math.random() - 0.5) * radius * 0.2
+    },
+    mouthArcStart: Math.PI * 0.2 + (Math.random() - 0.5) * 0.2,
+    mouthArcEnd: Math.PI * 0.8 + (Math.random() - 0.5) * 0.2,
+    mouthScale: 0.8 + Math.random() * 0.4,
+    leftEyeShape: eyeOptions[Math.floor(Math.random() * eyeOptions.length)],
+    rightEyeShape: eyeOptions[Math.floor(Math.random() * eyeOptions.length)],
+    leftEyeRotation: (Math.random() - 0.5) * 0.4,
+    rightEyeRotation: (Math.random() - 0.5) * 0.4,
+    mouthExpression: mouthOptions[Math.floor(Math.random() * mouthOptions.length)]
+  };
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 5) Skapar bollar med slumpmässiga face-parametrar
+///////////////////////////////////////////////////////////////////////////////
+function createEntity() {
+  const radius = Math.random() * 80 + 50;
+  const deform = new Array(SEGMENTS).fill(0);
+  const vel = new Array(SEGMENTS).fill(0);
+  return {
+    x: Math.random() * (canvas.width - 2 * radius) + radius,
+    y: Math.random() * (canvas.height - 2 * radius) + radius,
+    radius,
+    colorIndex: Math.floor(Math.random() * parsedColors.length),
+    dx: (Math.random() - 0.5) * 6,
+    dy: (Math.random() - 0.5) * 6,
+    deform,
+    vel,
+    shockTimer: 0,
+    face: generateFaceParameters(radius)
+  };
+}
+
+let entities = [];
+for (let i = 0; i < 10; i++) {
+  entities.push(createEntity());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Uppdaterar ansiktsuttrycket vid kollision genom att generera nya face-parametrar
+///////////////////////////////////////////////////////////////////////////////
+function updateFaceOnCollision(entity) {
+  entity.face = generateFaceParameters(entity.radius);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 6) Deformationsuppdatering
+///////////////////////////////////////////////////////////////////////////////
+function springUpdate(e) {
+  const effectiveDamp = e.shockTimer > 0 ? DAMP * 0.5 : DAMP;
+  const baseThreshold = -e.radius * MAX_INWARD_RATIO;
+  const baseLimit = -e.radius * CLAMP_INWARD_RATIO;
+  const baseSoftness = e.radius * 0.05;
+  const speed = Math.sqrt(e.dx * e.dx + e.dy * e.dy);
+  const speedRatio = Math.max(0, Math.min(1, (speed - MIN_SPEED) / (MAX_SPEED - MIN_SPEED)));
+  const effectiveThreshold = baseThreshold - speedRatio * e.radius * 0.02;
+  const effectiveSoftness = baseSoftness * (1 + speedRatio);
+  for (let i = 0; i < SEGMENTS; i++) {
+    let x = e.deform[i];
+    let v = e.vel[i];
+    const ax = -K * x - effectiveDamp * v;
+    v += ax;
+    x += v;
+    if (x < effectiveThreshold) {
+      const diff = effectiveThreshold - x;
+      const maxDiff = effectiveThreshold - baseLimit;
+      const factor = Math.tanh(diff / effectiveSoftness);
+      x = effectiveThreshold - factor * maxDiff;
+      v *= 0.5;
+    }
+    e.vel[i] = v;
+    e.deform[i] = x;
+  }
+}
+
+function smoothDeformations(e) {
+  const next = e.deform.slice();
+  for (let i = 0; i < SEGMENTS; i++) {
+    const prev = (i - 1 + SEGMENTS) % SEGMENTS;
+    const nxt = (i + 1) % SEGMENTS;
+    const avg = (e.deform[prev] + e.deform[i] + e.deform[nxt]) / 3;
+    next[i] = e.deform[i] * (1 - SMOOTH_FACTOR) + avg * SMOOTH_FACTOR;
+  }
+  e.deform = next;
+}
+
+/**
+ * Applicerar inbuktning via en Gaussian-fördelning centrerad på kollisionsvinkeln.
+ */
+function pushDeform(e, angle, baseAmount) {
+  angle = (angle + Math.PI * 2) % (Math.PI * 2);
+  const segmentAngle = (Math.PI * 2) / SEGMENTS;
+  const index = Math.floor(angle / segmentAngle);
+  const speed = Math.sqrt(e.dx * e.dx + e.dy * e.dy);
+  const speedFactor = (speed * speed) / 10;
+  for (let n = -PUSH_NEIGHBORHOOD; n <= PUSH_NEIGHBORHOOD; n++) {
+    const idx = (index + n + SEGMENTS) % SEGMENTS;
+    const distFromCenter = Math.abs(n);
+    const factor = Math.exp(-0.5 * (distFromCenter * distFromCenter));
+    const pushAmount = baseAmount * factor * speedFactor;
+    e.vel[idx] -= pushAmount;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 7) Kollisioner
+///////////////////////////////////////////////////////////////////////////////
+function checkCollisions() {
+  for (let i = 0; i < entities.length; i++) {
+    for (let j = i + 1; j < entities.length; j++) {
+      const e1 = entities[i];
+      const e2 = entities[j];
+      const eff1 = e1.radius * OVERLAP_FACTOR;
+      const eff2 = e2.radius * OVERLAP_FACTOR;
+      const dx = e2.x - e1.x;
+      const dy = e2.y - e1.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = eff1 + eff2;
+      if (dist < minDist) {
+        const overlap = (minDist - dist) / 2;
+        const angle = Math.atan2(dy, dx);
+        e1.x -= Math.cos(angle) * overlap;
+        e1.y -= Math.sin(angle) * overlap;
+        e2.x += Math.cos(angle) * overlap;
+        e2.y += Math.sin(angle) * overlap;
+        const normalX = dx / dist;
+        const normalY = dy / dist;
+        const relVx = e2.dx - e1.dx;
+        const relVy = e2.dy - e1.dy;
+        const relDot = relVx * normalX + relVy * normalY;
+        if (relDot < 0) {
+          const jImp = -(1 + RESTITUTION) * relDot / 2;
+          e1.dx -= jImp * normalX;
+          e1.dy -= jImp * normalY;
+          e2.dx += jImp * normalX;
+          e2.dy += jImp * normalY;
+        }
+        clampSpeed(e1);
+        clampSpeed(e2);
+        pushDeform(e1, angle, BASE_PUSH_STRENGTH);
+        pushDeform(e2, angle + Math.PI, BASE_PUSH_STRENGTH);
+        // Vid varje kollision, generera nya slumpade face-parametrar med större variation
+        updateFaceOnCollision(e1);
+        updateFaceOnCollision(e2);
+        e1.shockTimer = SHOCK_DURATION;
+        e2.shockTimer = SHOCK_DURATION;
+      }
+    }
+  }
+}
+
+function clampSpeed(e) {
+  const speed2 = e.dx * e.dx + e.dy * e.dy;
+  if (speed2 === 0) return;
+  let s = Math.sqrt(speed2);
+  if (s > MAX_SPEED) {
+    const scale = MAX_SPEED / s;
+    e.dx *= scale;
+    e.dy *= scale;
+    s = MAX_SPEED;
+  }
+  if (s < MIN_SPEED) {
+    const scale = MIN_SPEED / s;
+    e.dx *= scale;
+    e.dy *= scale;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 8) Rita boll + varierade ansikten
+///////////////////////////////////////////////////////////////////////////////
+function drawEntities() {
+  for (const e of entities) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    const base = parsedColors[e.colorIndex];
+    const highlight = shadeRGB(base, 1.4);
+    const shadow = shadeRGB(base, 0.6);
+    ctx.beginPath();
+    for (let i = 0; i < SEGMENTS; i++) {
+      const angle = (Math.PI * 2 * i) / SEGMENTS;
+      const r = e.radius + e.deform[i];
+      const px = Math.cos(angle) * r;
+      const py = Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    const offsetY = -0.25 * e.radius;
+    const grad = ctx.createRadialGradient(0, offsetY, 0, 0, 0, e.radius * 1.2);
+    grad.addColorStop(0, rgbToString(...highlight));
+    grad.addColorStop(1, rgbToString(...shadow));
+    ctx.fillStyle = grad;
+    ctx.fill();
+    drawFace3D(e);
+    ctx.restore();
+  }
+}
+
+function drawFace3D(e) {
+  const shocked = (e.shockTimer > 0);
+  const baseEyeOffsetX = e.radius * 0.4;
+  const baseEyeOffsetY = -e.radius * 0.2;
+  const baseEyeRadius = shocked ? e.radius * 0.12 : e.radius * 0.08;
+  const basePupilRadius = baseEyeRadius * (shocked ? 0.59 : 0.4);
+  const baseMouthY = e.radius * 0.3;
+  const baseMouthRadius = e.radius * 0.25;
+  const face = e.face || {};
+  const leftEyeOffsetX = -baseEyeOffsetX + (face.leftEyeOffset ? face.leftEyeOffset.x : 0);
+  const leftEyeOffsetY = baseEyeOffsetY + (face.leftEyeOffset ? face.leftEyeOffset.y : 0);
+  const rightEyeOffsetX = baseEyeOffsetX + (face.rightEyeOffset ? face.rightEyeOffset.x : 0);
+  const rightEyeOffsetY = baseEyeOffsetY + (face.rightEyeOffset ? face.rightEyeOffset.y : 0);
+  const eyeSizeFactor = face.eyeSize || 1;
+  const leftEyeRadius = baseEyeRadius * eyeSizeFactor;
+  const rightEyeRadius = baseEyeRadius * eyeSizeFactor;
+  const pupilSizeFactor = face.pupilSize || 1;
+  const leftPupilRadius = basePupilRadius * pupilSizeFactor;
+  const rightPupilRadius = basePupilRadius * pupilSizeFactor;
+  const leftPupilOffsetX = face.leftPupilOffset ? face.leftPupilOffset.x : 0;
+  const leftPupilOffsetY = face.leftPupilOffset ? face.leftPupilOffset.y : 0;
+  const rightPupilOffsetX = face.rightPupilOffset ? face.rightPupilOffset.x : 0;
+  const rightPupilOffsetY = face.rightPupilOffset ? face.rightPupilOffset.y : 0;
+  const leftEyeShape = face.leftEyeShape || "round";
+  const rightEyeShape = face.rightEyeShape || "round";
+  const leftEyeRotation = face.leftEyeRotation || 0;
+  const rightEyeRotation = face.rightEyeRotation || 0;
+  drawEye(leftEyeOffsetX, leftEyeOffsetY, leftEyeRadius, leftPupilRadius, leftPupilOffsetX, leftPupilOffsetY, leftEyeShape, leftEyeRotation);
+  drawEye(rightEyeOffsetX, rightEyeOffsetY, rightEyeRadius, rightPupilRadius, rightPupilOffsetX, rightPupilOffsetY, rightEyeShape, rightEyeRotation);
+  const mouthOffsetX = face.mouthOffset ? face.mouthOffset.x : 0;
+  const mouthOffsetY = baseMouthY + (face.mouthOffset ? face.mouthOffset.y : 0);
+  const mouthArcStart = (face.mouthArcStart !== undefined) ? face.mouthArcStart : Math.PI * 0.2;
+  const mouthArcEnd = (face.mouthArcEnd !== undefined) ? face.mouthArcEnd : Math.PI * 0.8;
+  const mouthScale = face.mouthScale || 1;
+  const mouthExpression = face.mouthExpression || "happy";
+  drawMouth(mouthOffsetX, mouthOffsetY, baseMouthRadius * mouthScale, shocked, mouthArcStart, mouthArcEnd, mouthExpression);
+}
+
+function drawEye(cx, cy, eyeR, pupilR, pupilOffsetX, pupilOffsetY, eyeShape, eyeRotation) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(eyeRotation);
+  const gradEye = ctx.createRadialGradient(-0.2 * eyeR, -0.2 * eyeR, 0, 0, 0, eyeR);
+  gradEye.addColorStop(0, "white");
+  gradEye.addColorStop(0.5, "white");
+  gradEye.addColorStop(1, "#ddd");
+  ctx.fillStyle = gradEye;
+  ctx.beginPath();
+  if (eyeShape === "round") {
+    ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
+  } else if (eyeShape === "oval") {
+    ctx.ellipse(0, 0, eyeR, eyeR * 0.8, 0, 0, Math.PI * 2);
+  } else if (eyeShape === "almond") {
+    ctx.ellipse(0, 0, eyeR, eyeR * 0.7, 0, 0, Math.PI * 2);
+  } else if (eyeShape === "skewed") {
+    ctx.ellipse(0, 0, eyeR * 0.9, eyeR * 0.7, 0.3, 0, Math.PI * 2);
+  } else if (eyeShape === "wide") {
+    ctx.ellipse(0, 0, eyeR * 1.2, eyeR * 0.8, 0, 0, Math.PI * 2);
+  } else if (eyeShape === "narrow") {
+    ctx.ellipse(0, 0, eyeR * 0.8, eyeR * 1.2, 0, 0, Math.PI * 2);
+  } else {
+    ctx.arc(0, 0, eyeR, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  ctx.strokeStyle = "#444";
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+  ctx.fillStyle = "black";
+  ctx.beginPath();
+  ctx.arc(pupilOffsetX, pupilOffsetY, pupilR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "white";
+  ctx.beginPath();
+  ctx.arc(pupilOffsetX - pupilR * 0.3, pupilOffsetY - pupilR * 0.3, pupilR * 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMouth(cx, cy, r, shocked, mouthArcStart, mouthArcEnd, mouthExpression) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // Sätt en fast linjetjocklek för alla munnar
+  const MOUTH_STROKE_WIDTH = 1;
+  ctx.lineWidth = MOUTH_STROKE_WIDTH;
+  ctx.strokeStyle = "black";
+  ctx.fillStyle = "black";
+  
+  let path = new Path2D();
+  
+  if (shocked) {
+    // Vid chock: ifylld rund mun (behåll originalformen)
+    path.arc(0, 0, r * 0.6, 0, Math.PI * 2);
+  } else {
+    if (mouthExpression === "happy") {
+      // Glad mun med en fyllig, leende form
+      path.moveTo(-r, 0);
+      path.quadraticCurveTo(0, r * 0.5, r, 0);
+      path.quadraticCurveTo(0, r * 0.6, -r, 0);
+      path.closePath();
+    } else if (mouthExpression === "angry") {
+      // Arg mun med en nedåtböjd form
+      path.moveTo(-r, 0);
+      path.quadraticCurveTo(0, -r * 0.5, r, 0);
+      path.quadraticCurveTo(0, -r * 0.6, -r, 0);
+      path.closePath();
+    } else if (mouthExpression === "indifferent") {
+      // Neutral mun: en tunn rektangel
+      path.rect(-r, -r * 0.05, 2 * r, r * 0.1);
+    } else if (mouthExpression === "surprised") {
+      // Överraskad mun: ifylld öppen ellipse
+      path.ellipse(0, 0, r * 0.6, r * 0.5, 0, 0, 2 * Math.PI);
+    } else if (mouthExpression === "curious") {
+      // Nyfiken mun: en annorlunda båge
+      path.moveTo(-r, 0);
+      path.quadraticCurveTo(0, r * 0.3, r, 0);
+      path.quadraticCurveTo(0, r * 0.4, -r, 0);
+      path.closePath();
+    } else {
+      // Fallback: glad mun
+      path.moveTo(-r, 0);
+      path.quadraticCurveTo(0, r * 0.5, r, 0);
+      path.quadraticCurveTo(0, r * 0.6, -r, 0);
+      path.closePath();
+    }
+  }
+  
+  ctx.fill(path);
+  ctx.stroke(path);
+  ctx.restore();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// 9) Main update + animate
+///////////////////////////////////////////////////////////////////////////////
+function updateEntities() {
+  for (const e of entities) {
+    e.x += e.dx;
+    e.y += e.dy;
+    if (e.shockTimer > 0) e.shockTimer--;
+    if (e.x - e.radius < 0) {
+      const overlap = e.radius - e.x;
+      e.x += overlap;
+      e.dx *= -1;
+      pushDeform(e, Math.PI, BASE_PUSH_STRENGTH);
+      e.shockTimer = SHOCK_DURATION;
+    } else if (e.x + e.radius > canvas.width) {
+      const overlap = e.x + e.radius - canvas.width;
+      e.x -= overlap;
+      e.dx *= -1;
+      pushDeform(e, 0, BASE_PUSH_STRENGTH);
+      e.shockTimer = SHOCK_DURATION;
+    }
+    if (e.y - e.radius < 0) {
+      const overlap = e.radius - e.y;
+      e.y += overlap;
+      e.dy *= -1;
+      pushDeform(e, -Math.PI/2, BASE_PUSH_STRENGTH);
+      e.shockTimer = SHOCK_DURATION;
+    } else if (e.y + e.radius > canvas.height) {
+      const overlap = e.y + e.radius - canvas.height;
+      e.y -= overlap;
+      e.dy *= -1;
+      pushDeform(e, Math.PI/2, BASE_PUSH_STRENGTH);
+      e.shockTimer = SHOCK_DURATION;
+    }
+    clampSpeed(e);
+    springUpdate(e);
+    smoothDeformations(e);
+  }
+  checkCollisions();
+}
+
+function animate() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground();
+  drawEntities();
+  updateEntities();
+  requestAnimationFrame(animate);
+}
+animate();
+</script>
+
+</body>
+</html>
